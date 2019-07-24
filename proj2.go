@@ -1,5 +1,6 @@
 package proj2
 
+// git push -u origin [branch_name]
 // You MUST NOT change what you import.  If you add ANY additional
 // imports it will break the autograder, and we will be Very Upset.
 
@@ -30,7 +31,6 @@ import (
 
 	// optional
 	_ "strconv"
-
 	// if you are looking for fmt, we don't give you fmt, but you can use userlib.DebugMsg
 	// see someUsefulThings() below
 )
@@ -64,7 +64,7 @@ func someUsefulThings() {
 	// And a random RSA key.  In this case, ignoring the error
 	// return value
 	var pk userlib.PKEEncKey
-        var sk userlib.PKEDecKey
+	var sk userlib.PKEDecKey
 	pk, sk, _ = userlib.PKEKeyGen()
 	userlib.DebugMsg("Key is %v, %v", pk, sk)
 }
@@ -102,6 +102,27 @@ type User struct {
 // keystore and the datastore functions in the userlib library.
 
 // You can assume the user has a STRONG password
+
+/*InitUser
+- Derive sourceKey = Argon2Key(password, username, 16)
+- k1 = HMACEval(sourceKey, username)
+- k2 = HMACEval(sourceKey, 1 + username)
+- Generate public/private keys using PKEKeyGen() and DSKeyGen()
+
+- userUUID = bytesToUUID(HMACEval(k1, username))
+- Determine if this UUID is already in the dataStore, if so, return
+
+- Create new User struct
+- Populate User with RSA_sk, DS_sk, and map[sharedfileUUID] = k6||k7
+- This map[sharedfileUUID, your_version_of_filename] = k6||k7 will be a list of all files for which you have access to but are not an owner
+- Pad User
+- userEntry = HMACEval(k1, SymEnc(k2, IV, userdata)), SymEnc(k2, IV, userdata)
+- datastore[userUUID] = userEntry
+
+- keystore[username||"enc"] = RSA_pk
+- keystore[username||"sig"] = DS_pk
+
+- return userdata (is this safe) */
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
@@ -112,6 +133,19 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // This fetches the user information from the Datastore.  It should
 // fail with an error if the user/password is invalid, or if the user
 // data was corrupted, or if the user can't be found.
+
+/*GetUser
+- Derive sourceKey = Argon2Key(password, username, 16)
+- k1 = HMACEval(sourceKey, username)
+- k2 = HMACEval(sourceKey, 1 + username)
+- userUUID = bytesToUUID(HMACEval(k1, username))
+
+- Check if userUUID is in the datastore. If not, return error
+- a userUUID won't exist if the username/password combo is wrong (any other way to check this?)
+- get the userEntry at userUUID
+- Take HMACEval(k1, SymEnc(k2, IV, userdata)) and verify this with userEntry
+- If not equal, return error
+*/
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
@@ -122,6 +156,28 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // This stores a file in the datastore.
 //
 // The name of the file should NOT be revealed to the datastore!
+// edge case, storing a file that's already stored
+
+/*StoreFile
+- Obtain username from userdata
+- Derive sourceKey = Argon2Key(password, username, 16)  (how can the user find the password in the implementation?)
+- k3 = HMACEval(sourceKey, filename + username + "enc")
+- k4 = HMACEval(sourceKey, filename + username + "sig")
+- k6 = HMACEval(sourceKey, filename + username + "shareEnc")
+- k7 = HMACEval(sourceKey, filename + username + "shareSig")
+- fileUUID = bytesToUUID(HMAC(k4, filename))
+- sharedfileUUID = bytesToUUID(HMAC(k6, k7))
+
+- Check if fileUUID or sharedfileUUID already exists in datastore. If so, return
+
+- create fileData struct
+- populate fileData with signature, ciphertext, and list_of_shared_people
+- ciphertext = SymEnc(k3, IV, list(data))
+- list_of_shared_people = list(userUUID of owner)  (when you first store a file, you are the only person who can access)
+- signature = HMACEval(k4, ciphertext||list_of_shared_people)
+
+- store datastore[fileUUID] = HMACEval(k4, SymEnc(k3, IV, fileData))
+*/
 func (userdata *User) StoreFile(filename string, data []byte) {
 	return
 }
@@ -159,6 +215,30 @@ type sharingRecord struct {
 // recipient can access the sharing record, and only the recipient
 // should be able to know the sender.
 
+/*ShareFile
+- See if filename = your_version_of_filename in map[sharedfileUUID, your_version_of_filename] in userdata
+- If so, you are trying to share a file for which you are not the owner
+	- create magic_string = DSSign(sender's private key, PKEEnc(recipient's public key, k6||k7))
+
+- If not,
+- Obtain username from userdata
+- Derive sourceKey = Argon2Key(password, username, 16)  (how can the user find the password in the implementation?)
+- k3 = HMACEval(sourceKey, filename + username + "enc")
+- k4 = HMACEval(sourceKey, filename + username + "sig")
+- k6 = HMACEval(sourceKey, filename + username + "shareEnc")
+- k7 = HMACEval(sourceKey, filename + username + "shareSig")
+- magic_string = DSSign(sender's private key, PKEEnc(recipient's public key, k6||k7))
+
+- fileUUID = bytesToUUID(HMAC(k4, filename))
+- sharedfileUUID = bytesToUUID(HMAC(k6, k7))
+
+- Find fileUUID in datastore
+- If fileUUID doesn't exist, return
+- If fileUUID exists, verify & decrypt the filedata and encrypt/HMAC it again with k6 & k7
+- delete fileUUID from datastore
+
+- Later, if Bob calls receiveFile, he will verify & decrypt magic_string, and use k6, k7 to calculate the sharedfileUUID
+*/
 func (userdata *User) ShareFile(filename string, recipient string) (
 	magic_string string, err error) {
 
