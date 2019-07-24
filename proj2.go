@@ -30,7 +30,6 @@ import (
 
 	// optional
 	_ "strconv"
-
 	// if you are looking for fmt, we don't give you fmt, but you can use userlib.DebugMsg
 	// see someUsefulThings() below
 )
@@ -64,7 +63,7 @@ func someUsefulThings() {
 	// And a random RSA key.  In this case, ignoring the error
 	// return value
 	var pk userlib.PKEEncKey
-        var sk userlib.PKEDecKey
+	var sk userlib.PKEDecKey
 	pk, sk, _ = userlib.PKEKeyGen()
 	userlib.DebugMsg("Key is %v, %v", pk, sk)
 }
@@ -80,11 +79,28 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 
 // The structure definition for a user record
 type User struct {
-	Username string
-
-	// You can add other fields here if you want...
+	Username    string
+	SourceKey   []byte
+	HmacKey     []byte
+	EncKey      []byte
+	UserUUID    uuid.UUID
+	RsaSk       userlib.PKEDecKey
+	DsSk        userlib.DSSignKey
+	SharedFiles map[string]string
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
+}
+
+type DataToStore struct {
+	CipherText []byte
+	Sigma      []byte
+	Iv         []byte
+}
+
+type UserEntry struct {
+	CipherText []byte
+	Sigma      []byte
+	Iv         []byte
 }
 
 // This creates a user.  It will only be called once for a user
@@ -106,7 +122,60 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 
+	// generate RSA encryption keys
+	rsaPk, rsaSk, _ := userlib.PKEKeyGen()
+	userlib.KeystoreSet(username+"enc", rsaPk)
+
+	// generate RSA signature keys
+	dsSk, dsPk, _ := userlib.DSKeyGen()
+	userlib.KeystoreSet(username+"sig", dsPk)
+
+	// generate other keys
+	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	hmacKey, _ := userlib.HMACEval(sourceKey, []byte(username))
+	encKey, _ := userlib.HMACEval(sourceKey, []byte(username+"1"))
+
+	// check if username already exists
+	filename, _ := userlib.HMACEval(hmacKey, []byte(username))
+	userUUID := bytesToUUID(filename)
+	if _, ok := userlib.DatastoreGet(userUUID); !ok {
+		return
+	}
+
+	// initialize User struct
+	userdataptr.Username = username
+	userdataptr.SourceKey = sourceKey
+	userdataptr.HmacKey = hmacKey
+	userdataptr.EncKey = encKey
+	userdataptr.UserUUID = userUUID
+	userdataptr.RsaSk = rsaSk
+	userdataptr.DsSk = dsSk
+	userdataptr.SharedFiles = make(map[string]string)
+
+	userdataMarshal, _ := json.Marshal(userdata)
+	userlib.DebugMsg("userdata: %v", string(userdataMarshal))
+
+	// encrypt and store userdata in the datastore
+	var encryptedData UserEntry
+	iv := userlib.RandomBytes(16)
+	encryptedData.Iv = iv
+	encryptedData.CipherText = userlib.SymEnc(encKey, iv, userdataMarshal)
+	encryptedData.Sigma, _ = userlib.HMACEval(hmacKey, encryptedData.CipherText)
+
+	data, _ := json.Marshal(encryptedData)
+	userlib.DebugMsg("encrypted datatostore: %v", string(data))
+	userdataptr.StoreFile(string(filename), data)
+
 	return &userdata, nil
+}
+
+func padString(str string, length int) string {
+	for {
+		if len(str) > length {
+			return str[0:length]
+		}
+		str += "0"
+	}
 }
 
 // This fetches the user information from the Datastore.  It should
@@ -123,6 +192,8 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 //
 // The name of the file should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	fileUUID := bytesToUUID([]byte(filename))
+	userlib.DatastoreSet(fileUUID, data)
 	return
 }
 
@@ -140,6 +211,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+
 	return
 }
 
