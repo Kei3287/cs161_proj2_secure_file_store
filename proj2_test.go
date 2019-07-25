@@ -9,9 +9,11 @@ import (
 	_ "strings"
 	"testing"
 
-	_ "github.com/google/uuid"
+	"github.com/google/uuid"
 	"github.com/ryanleh/cs161-p2/userlib"
 )
+
+// when running go test -v, make sure to use unique username throught the test file
 
 func TestInit(t *testing.T) {
 	t.Log("Initialization test")
@@ -78,6 +80,7 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestStore(t *testing.T) {
 	t.Log("Testing StoreFile")
 	userlib.SetDebugStatus(true)
@@ -150,6 +153,101 @@ func TestStore(t *testing.T) {
 		t.Error("datastore keys not correct")
 		return
 	}
+=======
+func TestGetUserError(t *testing.T) {
+	t.Log("getUserError test")
+	userlib.SetDebugStatus(true)
+	username := "alice4"
+	password := "pass"
+	u, err := InitUser(username, password)
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u, err = GetUser("a", password)
+	if err == nil {
+		t.Error("failed to get an error")
+		return
+	}
+	u, err = GetUser(username, "fake password")
+	if err == nil {
+		t.Error("failed to get an error")
+		return
+	}
+
+	t.Log("should return nil")
+	t.Log("Got user", u)
+}
+
+func generateKeyAndUUID(username string, password string) (hmacKey []byte, symKey []byte, userUUID uuid.UUID) {
+	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	hmacKey, symKey = generateKeysForDataStore(username, sourceKey)
+	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
+	userUUID = bytesToUUID(filename)
+	return hmacKey, symKey, userUUID
+}
+
+func TestGetUserAttack(t *testing.T) {
+	t.Log("getUserAttack test")
+	userlib.SetDebugStatus(true)
+	username5 := "alice5"
+	username6 := "alice6"
+	username7 := "alice7"
+	username8 := "alice8"
+	password := "pass"
+	u, err := InitUser(username5, password)
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	_, _, userUUID := generateKeyAndUUID(username5, password)
+
+	// datastore delete entry attack
+	userlib.DatastoreDelete(userUUID)
+	u, err = GetUser(username5, password)
+	if err == nil {
+		t.Error("failed to detect the corruption of data")
+		return
+	}
+
+	// keystore clear attack
+	u, err = InitUser(username6, password)
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	userlib.KeystoreClear()
+	u, err = GetUser(username6, password)
+	if err == nil {
+		t.Error("failed to detect the corruption of data")
+		return
+	}
+
+	// modify the data on datastore attack
+	u, err = InitUser(username7, password)
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u, err = InitUser(username8, password)
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	_, _, userUUID7 := generateKeyAndUUID(username7, password)
+	_, _, userUUID8 := generateKeyAndUUID(username8, password)
+	val, _ := userlib.DatastoreGet(userUUID7)
+	userlib.DatastoreSet(userUUID8, val)
+	u, err = GetUser(username8, password)
+	if err == nil {
+		t.Error("failed to detect the corruption of data")
+		return
+	}
+
+	t.Log("should return nil")
+	t.Log("Got user", u)
+>>>>>>> 7d88a10b52be4bc1520f923586d366d2c95b5e5a
 }
 
 // func TestStorage(t *testing.T) {
