@@ -104,6 +104,13 @@ type UserEntry struct {
 	Iv         []byte
 }
 
+type FileEntry struct {
+	CipherText        [][]byte // each file entry is a list of encrypted files
+	Sigma             []byte
+	Iv                []byte
+	ListOfSharedUsers []uuid.UUID
+}
+
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
 
@@ -185,7 +192,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	encryptedData.Sigma, _ = userlib.HMACEval(userdataptr.HmacKey, encryptedData.CipherText)
 
 	data, _ := json.Marshal(encryptedData)
-	userdataptr.StoreFile(string(filename), data)
+
+	fileUUID := bytesToUUID([]byte(filename))
+	userlib.DatastoreSet(fileUUID, data)
 
 	return &userdata, nil
 }
@@ -268,7 +277,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 - k4 = HMACEval(sourceKey, filename + username + "sig")
 - k6 = HMACEval(sourceKey, filename + username + "shareEnc")
 - k7 = HMACEval(sourceKey, filename + username + "shareSig")
-- fileUUID = bytesToUUID(HMAC(k4, filename))
+- fileUUID = bytesToUUID(HMAC(k3, filename))
 - sharedfileUUID = bytesToUUID(HMAC(k6, k7))
 
 - Check if fileUUID or sharedfileUUID already exists in datastore. If so, return
@@ -277,13 +286,50 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 - populate fileData with signature, ciphertext, and list_of_shared_people
 - ciphertext = SymEnc(k3, IV, list(data))
 - list_of_shared_people = list(userUUID of owner)  (when you first store a file, you are the only person who can access)
-- signature = HMACEval(k4, ciphertext||list_of_shared_people)
+- signature = HMACEval(k4, ciphertext)
 
 - store datastore[fileUUID] = HMACEval(k4, SymEnc(k3, IV, fileData))
 */
 func (userdata *User) StoreFile(filename string, data []byte) {
-	fileUUID := bytesToUUID([]byte(filename))
-	userlib.DatastoreSet(fileUUID, data)
+	sourceKey := userdata.SourceKey
+	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
+	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
+	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
+
+	// creating the fileUUID to see if it exists in the datastore already
+	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
+	fileUUID := bytesToUUID(encryptedFilename)
+
+	// creating the sharedfileUUID to see if it exists in the datastore already
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey[0:16], sharedfileMacKey)
+	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
+
+	if _, ok := userlib.DatastoreGet(fileUUID); ok {
+		errors.New("file already exists. you are the only owner")
+		return
+	}
+
+	if _, ok := userlib.DatastoreGet(sharedfileUUID); ok {
+		errors.New("file already exists. you are not the only owner")
+		return
+	}
+
+	var encryptedData FileEntry
+	iv := userlib.RandomBytes(16)
+	encryptedData.Iv = iv
+	encryptedData.CipherText = append(encryptedData.CipherText, userlib.SymEnc(fileEncKey, iv, padString(data))) // list of encrypted filedata
+
+	encryptedFileMarshal, _ := json.Marshal(encryptedData.CipherText) // marshalling so I can pass this into sigma
+	encryptedData.Sigma, _ = userlib.HMACEval(sharedfileMacKey[0:16], []byte(encryptedFileMarshal))
+
+	encryptedUsername, _ := userlib.HMACEval(userdata.HmacKey[0:16], []byte(userdata.Username))
+	userUUID := bytesToUUID(encryptedUsername)
+	encryptedData.ListOfSharedUsers = append(encryptedData.ListOfSharedUsers, userUUID) // list of UUID of people who can access file. First entry is owner
+
+	encryptedDataMarshal, _ := json.Marshal(encryptedData)
+
+	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
+
 	return
 }
 
