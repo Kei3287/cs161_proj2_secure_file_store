@@ -4,6 +4,7 @@ import (
 	_ "encoding/hex"
 	_ "encoding/json"
 	_ "errors"
+	"reflect"
 	_ "strconv"
 	_ "strings"
 	"testing"
@@ -73,6 +74,80 @@ func TestGetUser(t *testing.T) {
 	userUUID := bytesToUUID(filename)
 	if u.Username != username || u.UserUUID != userUUID {
 		t.Error("data doesn't match")
+		return
+	}
+}
+
+func TestStore(t *testing.T) {
+	t.Log("Testing StoreFile")
+	userlib.SetDebugStatus(true)
+
+	alice5, err := InitUser("alice5", "alice_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user Alice", err)
+		return
+	}
+
+	alice5.StoreFile("file_x", []byte("My name is Barry Allen and I am the Flash"))
+	alice5.StoreFile("file_x", []byte("I am Flash"))
+
+	alice5.StoreFile("file_y", []byte("My name is Barry Allen and I am the Flash"))
+	alice5.StoreFile("file_z", []byte("I'm still the Flash"))
+
+	bob5, err := InitUser("bob5", "bob_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user Bob", err)
+		return
+	}
+
+	bob5.StoreFile("file_x", []byte("Alice think's she's the Flash, but she's not"))
+	bob5.StoreFile("file_a", []byte("I am the Flash"))
+
+	aliceFilexEnckey, _ := userlib.HMACEval(alice5.SourceKey, []byte("file_x"+alice5.Username+"enc"))
+	aliceFilexEnc, _ := userlib.HMACEval(aliceFilexEnckey[0:16], []byte("file_x"))
+	aliceFilexUUID := bytesToUUID(aliceFilexEnc)
+
+	aliceFileyEnckey, _ := userlib.HMACEval(alice5.SourceKey, []byte("file_y"+alice5.Username+"enc"))
+	aliceFileyEnc, _ := userlib.HMACEval(aliceFileyEnckey[0:16], []byte("file_y"))
+	aliceFileyUUID := bytesToUUID(aliceFileyEnc)
+
+	aliceFilezEnckey, _ := userlib.HMACEval(alice5.SourceKey, []byte("file_z"+alice5.Username+"enc"))
+	aliceFilezEnc, _ := userlib.HMACEval(aliceFilezEnckey[0:16], []byte("file_z"))
+	aliceFilezUUID := bytesToUUID(aliceFilezEnc)
+
+	bobFilexEnckey, _ := userlib.HMACEval(bob5.SourceKey, []byte("file_x"+bob5.Username+"enc"))
+	bobFilexEnc, _ := userlib.HMACEval(bobFilexEnckey[0:16], []byte("file_x"))
+	bobFilexUUID := bytesToUUID(bobFilexEnc)
+
+	bobFileaEnckey, _ := userlib.HMACEval(bob5.SourceKey, []byte("file_a"+bob5.Username+"enc"))
+	bobFileaEnc, _ := userlib.HMACEval(bobFileaEnckey[0:16], []byte("file_a"))
+	bobFileaUUID := bytesToUUID(bobFileaEnc)
+
+	alice5Enc, _ := userlib.HMACEval(alice5.HmacKey[0:16], []byte(alice5.Username))
+	alice5UUID := bytesToUUID(alice5Enc)
+
+	bob5Enc, _ := userlib.HMACEval(bob5.HmacKey[0:16], []byte(bob5.Username))
+	bob5UUID := bytesToUUID(bob5Enc)
+
+	entireDatastore := userlib.DatastoreGetMap()
+
+	datastoreKeys := make([]userlib.UUID, len(entireDatastore))
+	i := 0
+	for k := range entireDatastore {
+		datastoreKeys[i] = k
+		i++
+	}
+
+	localDatastoreKeys := []userlib.UUID{aliceFilexUUID, aliceFileyUUID, aliceFilezUUID, bobFilexUUID, bobFileaUUID, alice5UUID, bob5UUID}
+
+	// These print statements show what is inside the two lists. Do TestLoad later to actually see if file values fetched are correct
+	//fmt.Println(localDatastoreKeys)
+	//fmt.Println(datastoreKeys)
+
+	if reflect.DeepEqual(localDatastoreKeys, datastoreKeys) {
+		t.Error("datastore keys not correct")
 		return
 	}
 }

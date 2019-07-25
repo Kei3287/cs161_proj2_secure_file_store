@@ -109,6 +109,7 @@ type FileEntry struct {
 	Sigma             []byte
 	Iv                []byte
 	ListOfSharedUsers []uuid.UUID
+	SigmaSharedUsers  []byte
 }
 
 // This creates a user.  It will only be called once for a user
@@ -293,8 +294,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, data []byte) {
 	sourceKey := userdata.SourceKey
 	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
+	fileEncKey = fileEncKey[0:16]
 	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
+	sharedfileEncKey = sharedfileEncKey[0:16]
 	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
+	sharedfileMacKey = sharedfileMacKey[0:16]
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
@@ -314,17 +318,21 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		return
 	}
 
+	// filling in the FileEntry
 	var encryptedData FileEntry
 	iv := userlib.RandomBytes(16)
 	encryptedData.Iv = iv
 	encryptedData.CipherText = append(encryptedData.CipherText, userlib.SymEnc(fileEncKey, iv, padString(data))) // list of encrypted filedata
 
-	encryptedFileMarshal, _ := json.Marshal(encryptedData.CipherText) // marshalling so I can pass this into sigma
-	encryptedData.Sigma, _ = userlib.HMACEval(sharedfileMacKey[0:16], []byte(encryptedFileMarshal))
+	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)                               // marshalling so I can pass this into sigma
+	encryptedData.Sigma, _ = userlib.HMACEval(sharedfileMacKey[0:16], []byte(ciphertextMarshal)) // sigma on the filedata
 
 	encryptedUsername, _ := userlib.HMACEval(userdata.HmacKey[0:16], []byte(userdata.Username))
 	userUUID := bytesToUUID(encryptedUsername)
 	encryptedData.ListOfSharedUsers = append(encryptedData.ListOfSharedUsers, userUUID) // list of UUID of people who can access file. First entry is owner
+
+	sharedMarshal, _ := json.Marshal(encryptedData.ListOfSharedUsers)
+	encryptedData.SigmaSharedUsers, _ = userlib.HMACEval(sharedfileMacKey[0:16], []byte(sharedMarshal)) // sigma on the list of shared users
 
 	encryptedDataMarshal, _ := json.Marshal(encryptedData)
 
