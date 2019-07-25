@@ -34,29 +34,47 @@ func TestInit(t *testing.T) {
 
 func TestInitError(t *testing.T) {
 	t.Log("Initialization test")
-
-	// You may want to turn it off someday
 	userlib.SetDebugStatus(true)
-	// someUsefulThings()  //  Don't call someUsefulThings() in the autograder in case a student removes it
-	// userlib.SetDebugStatus(false)
-	u, err := InitUser("alice", "p")
+	u, err := InitUser("alice2", "p")
 	if err != nil {
-		// t.Error says the test fails
 		t.Error("Failed to initialize user", err)
 		return
 	}
-	u, err = InitUser("alice", "p")
+	u, err = InitUser("alice2", "p")
 	if err == nil {
-		// t.Error says the test fails
 		t.Error("Failed to initialize user", err)
 		return
 	}
 
-	// t.Log() only produces output if you run with "go test -v"
+	t.Log("should return nil")
 	t.Log("Got user", u)
-	// If you want to comment the line above,
-	// write _ = u here to make the compiler happy
-	// You probably want many more tests here.
+}
+
+func TestGetUser(t *testing.T) {
+	t.Log("getUser test")
+	userlib.SetDebugStatus(true)
+	username := "alice3"
+	password := "pass"
+	u, err := InitUser(username, password)
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u, err = GetUser(username, password)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	t.Log("Got user", u)
+	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	hmacKey, symKey := generateKeysForDataStore(username, sourceKey)
+	u.SymKey = symKey
+	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
+	userUUID := bytesToUUID(filename)
+	if u.Username != username || u.UserUUID != userUUID {
+		t.Error("data doesn't match")
+		return
+	}
 }
 
 // func TestStorage(t *testing.T) {
