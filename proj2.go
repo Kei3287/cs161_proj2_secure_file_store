@@ -91,12 +91,6 @@ type User struct {
 	// be public (start with a capital letter)
 }
 
-type DataToStore struct {
-	CipherText []byte
-	Sigma      []byte
-	Iv         []byte
-}
-
 type UserEntry struct {
 	CipherText []byte
 	Sigma      []byte
