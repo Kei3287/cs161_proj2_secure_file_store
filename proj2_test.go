@@ -80,59 +80,58 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestStore(t *testing.T) {
 	t.Log("Testing StoreFile")
 	userlib.SetDebugStatus(true)
 
-	alice5, err := InitUser("alice5", "alice_password")
+	alice0001, err := InitUser("alice0001", "alice_password")
 	if err != nil {
 		// t.Error says the test fails
 		t.Error("Failed to initialize user Alice", err)
 		return
 	}
 
-	alice5.StoreFile("file_x", []byte("My name is Barry Allen and I am the Flash"))
-	alice5.StoreFile("file_x", []byte("I am Flash"))
+	alice0001.StoreFile("file_x", []byte("My name is Barry Allen and I am the Flash"))
+	alice0001.StoreFile("file_x", []byte("I am Flash"))
 
-	alice5.StoreFile("file_y", []byte("My name is Barry Allen and I am the Flash"))
-	alice5.StoreFile("file_z", []byte("I'm still the Flash"))
+	alice0001.StoreFile("file_y", []byte("My name is Barry Allen and I am the Flash"))
+	alice0001.StoreFile("file_z", []byte("I'm still the Flash"))
 
-	bob5, err := InitUser("bob5", "bob_password")
+	bob0001, err := InitUser("bob0001", "bob_password")
 	if err != nil {
 		// t.Error says the test fails
 		t.Error("Failed to initialize user Bob", err)
 		return
 	}
 
-	bob5.StoreFile("file_x", []byte("Alice think's she's the Flash, but she's not"))
-	bob5.StoreFile("file_a", []byte("I am the Flash"))
+	bob0001.StoreFile("file_x", []byte("Alice think's she's the Flash, but she's not"))
+	bob0001.StoreFile("file_a", []byte("I am the Flash"))
 
-	aliceFilexEnckey, _ := userlib.HMACEval(alice5.SourceKey, []byte("file_x"+alice5.Username+"enc"))
+	aliceFilexEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_x"+alice0001.Username+"enc"))
 	aliceFilexEnc, _ := userlib.HMACEval(aliceFilexEnckey[0:16], []byte("file_x"))
 	aliceFilexUUID := bytesToUUID(aliceFilexEnc)
 
-	aliceFileyEnckey, _ := userlib.HMACEval(alice5.SourceKey, []byte("file_y"+alice5.Username+"enc"))
+	aliceFileyEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_y"+alice0001.Username+"enc"))
 	aliceFileyEnc, _ := userlib.HMACEval(aliceFileyEnckey[0:16], []byte("file_y"))
 	aliceFileyUUID := bytesToUUID(aliceFileyEnc)
 
-	aliceFilezEnckey, _ := userlib.HMACEval(alice5.SourceKey, []byte("file_z"+alice5.Username+"enc"))
+	aliceFilezEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_z"+alice0001.Username+"enc"))
 	aliceFilezEnc, _ := userlib.HMACEval(aliceFilezEnckey[0:16], []byte("file_z"))
 	aliceFilezUUID := bytesToUUID(aliceFilezEnc)
 
-	bobFilexEnckey, _ := userlib.HMACEval(bob5.SourceKey, []byte("file_x"+bob5.Username+"enc"))
+	bobFilexEnckey, _ := userlib.HMACEval(bob0001.SourceKey, []byte("file_x"+bob0001.Username+"enc"))
 	bobFilexEnc, _ := userlib.HMACEval(bobFilexEnckey[0:16], []byte("file_x"))
 	bobFilexUUID := bytesToUUID(bobFilexEnc)
 
-	bobFileaEnckey, _ := userlib.HMACEval(bob5.SourceKey, []byte("file_a"+bob5.Username+"enc"))
+	bobFileaEnckey, _ := userlib.HMACEval(bob0001.SourceKey, []byte("file_a"+bob0001.Username+"enc"))
 	bobFileaEnc, _ := userlib.HMACEval(bobFileaEnckey[0:16], []byte("file_a"))
 	bobFileaUUID := bytesToUUID(bobFileaEnc)
 
-	alice5Enc, _ := userlib.HMACEval(alice5.HmacKey[0:16], []byte(alice5.Username))
-	alice5UUID := bytesToUUID(alice5Enc)
+	alice0001Enc, _ := userlib.HMACEval(alice0001.HmacKey[0:16], []byte(alice0001.Username))
+	alice0001UUID := bytesToUUID(alice0001Enc)
 
-	bob5Enc, _ := userlib.HMACEval(bob5.HmacKey[0:16], []byte(bob5.Username))
-	bob5UUID := bytesToUUID(bob5Enc)
+	bob0001Enc, _ := userlib.HMACEval(bob0001.HmacKey[0:16], []byte(bob0001.Username))
+	bob0001UUID := bytesToUUID(bob0001Enc)
 
 	entireDatastore := userlib.DatastoreGetMap()
 
@@ -143,7 +142,7 @@ func TestStore(t *testing.T) {
 		i++
 	}
 
-	localDatastoreKeys := []userlib.UUID{aliceFilexUUID, aliceFileyUUID, aliceFilezUUID, bobFilexUUID, bobFileaUUID, alice5UUID, bob5UUID}
+	localDatastoreKeys := []userlib.UUID{aliceFilexUUID, aliceFileyUUID, aliceFilezUUID, bobFilexUUID, bobFileaUUID, alice0001UUID, bob0001UUID}
 
 	// These print statements show what is inside the two lists. Do TestLoad later to actually see if file values fetched are correct
 	//fmt.Println(localDatastoreKeys)
@@ -153,7 +152,8 @@ func TestStore(t *testing.T) {
 		t.Error("datastore keys not correct")
 		return
 	}
-=======
+}
+
 func TestGetUserError(t *testing.T) {
 	t.Log("getUserError test")
 	userlib.SetDebugStatus(true)
@@ -247,7 +247,6 @@ func TestGetUserAttack(t *testing.T) {
 
 	t.Log("should return nil")
 	t.Log("Got user", u)
->>>>>>> 7d88a10b52be4bc1520f923586d366d2c95b5e5a
 }
 
 // func TestStorage(t *testing.T) {
