@@ -136,16 +136,17 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	encKey, _ := userlib.HMACEval(sourceKey, []byte(username+"1"))
 
 	// check if username already exists
-	filename, _ := userlib.HMACEval(hmacKey, []byte(username))
+	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
 	userUUID := bytesToUUID(filename)
-	if _, ok := userlib.DatastoreGet(userUUID); !ok {
-		return
+	if _, ok := userlib.DatastoreGet(userUUID); ok {
+		userlib.DebugMsg("userUUID already exists")
+		return nil, errors.New("Username already exists")
 	}
 
 	// initialize User struct
 	userdataptr.Username = username
 	userdataptr.SourceKey = sourceKey
-	userdataptr.HmacKey = hmacKey
+	userdataptr.HmacKey = hmacKey[0:16]
 	userdataptr.EncKey = encKey
 	userdataptr.UserUUID = userUUID
 	userdataptr.RsaSk = rsaSk

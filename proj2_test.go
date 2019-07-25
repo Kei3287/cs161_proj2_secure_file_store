@@ -1,20 +1,17 @@
 package proj2
 
-// You MUST NOT change what you import.  If you add ANY additional
-// imports it will break the autograder, and we will be Very Upset.
-
 import (
-	"testing"
-	"reflect"
-	"github.com/ryanleh/cs161-p2/userlib"
-	_ "encoding/json"
 	_ "encoding/hex"
-	_ "github.com/google/uuid"
-	_ "strings"
+	_ "encoding/json"
 	_ "errors"
+	"reflect"
 	_ "strconv"
-)
+	_ "strings"
+	"testing"
 
+	_ "github.com/google/uuid"
+	"github.com/ryanleh/cs161-p2/userlib"
+)
 
 func TestInit(t *testing.T) {
 	t.Log("Initialization test")
@@ -22,7 +19,7 @@ func TestInit(t *testing.T) {
 	// You may want to turn it off someday
 	userlib.SetDebugStatus(true)
 	// someUsefulThings()  //  Don't call someUsefulThings() in the autograder in case a student removes it
-	userlib.SetDebugStatus(false)
+	// userlib.SetDebugStatus(false)
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		// t.Error says the test fails
@@ -36,7 +33,6 @@ func TestInit(t *testing.T) {
 	// You probably want many more tests here.
 }
 
-
 func TestStorage(t *testing.T) {
 	// And some more tests, because
 	u, err := GetUser("alice", "fubar")
@@ -48,7 +44,6 @@ func TestStorage(t *testing.T) {
 
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
-
 
 	v2, err2 := u.LoadFile("file1")
 	if err2 != nil {
