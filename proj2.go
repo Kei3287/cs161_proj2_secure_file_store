@@ -82,7 +82,7 @@ type User struct {
 	Username    string
 	SourceKey   []byte
 	HmacKey     []byte
-	EncKey      []byte
+	SymKey      []byte
 	UserUUID    uuid.UUID
 	RsaSk       userlib.PKEDecKey
 	DsSk        userlib.DSSignKey
@@ -131,23 +131,21 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userlib.KeystoreSet(username+"sig", dsPk)
 
 	// generate other keys
-	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
-	hmacKey, _ := userlib.HMACEval(sourceKey, []byte(username))
-	encKey, _ := userlib.HMACEval(sourceKey, []byte(username+"1"))
+	sourceKey, hmacKey, symKey := generateKeysForDataStore(username, password)
 
 	// check if username already exists
 	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
 	userUUID := bytesToUUID(filename)
 	if _, ok := userlib.DatastoreGet(userUUID); ok {
-		userlib.DebugMsg("userUUID already exists")
 		return nil, errors.New("Username already exists")
 	}
 
 	// initialize User struct
+	userlib.DebugMsg("length: %v", len(symKey))
 	userdataptr.Username = username
 	userdataptr.SourceKey = sourceKey
 	userdataptr.HmacKey = hmacKey[0:16]
-	userdataptr.EncKey = encKey
+	userdataptr.SymKey = symKey[0:16]
 	userdataptr.UserUUID = userUUID
 	userdataptr.RsaSk = rsaSk
 	userdataptr.DsSk = dsSk
@@ -160,7 +158,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var encryptedData UserEntry
 	iv := userlib.RandomBytes(16)
 	encryptedData.Iv = iv
-	encryptedData.CipherText = userlib.SymEnc(encKey, iv, userdataMarshal)
+	encryptedData.CipherText = userlib.SymEnc(symKey, iv, userdataMarshal)
 	encryptedData.Sigma, _ = userlib.HMACEval(hmacKey, encryptedData.CipherText)
 
 	data, _ := json.Marshal(encryptedData)
@@ -168,6 +166,13 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdataptr.StoreFile(string(filename), data)
 
 	return &userdata, nil
+}
+
+func generateKeysForDataStore(username string, password string) ([]byte, []byte, []byte) {
+	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	hmacKey, _ := userlib.HMACEval(sourceKey, []byte(username))
+	encKey, _ := userlib.HMACEval(sourceKey, []byte(username+"1"))
+	return sourceKey, hmacKey, encKey
 }
 
 func padString(str string, length int) string {
