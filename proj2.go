@@ -154,7 +154,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdataptr.SharedFiles = make(map[string]string)
 
 	userdataMarshal, _ := json.Marshal(userdata)
-	// userlib.DebugMsg("userdata: %v", string(userdataMarshal))
 
 	// encrypt and store userdata in the datastore
 	var encryptedData UserEntry
@@ -186,7 +185,6 @@ func padString(str []byte) []byte {
 	}
 	padText := []byte(strings.Repeat(string([]byte{byte(0)}), padBytes-1))
 	str = append(str, append(padText, byte(padBytes))...)
-	// userlib.DebugMsg("str length: %v", len(str))
 	return str
 }
 
@@ -208,7 +206,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	marshalData, ok := userlib.DatastoreGet(userUUID)
 	_, usernameOk := userlib.KeystoreGet(username + "enc")
 	if !ok || !usernameOk {
-		return nil, errors.New("Username doesn't exists or wrong password")
+		return nil, errors.New("The username doesn't exist or wrong password")
 	}
 	var data UserEntry
 	json.Unmarshal(marshalData, &data)
