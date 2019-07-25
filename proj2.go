@@ -354,7 +354,9 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 /*LoadFile
 - calculate fileUUID from filename
 - return error if fileUUID not in datastore
-
+- we use different keys depending on if we're loading a shared or not-shared file
+- check integrity of file
+- decrypt
 */
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
@@ -405,14 +407,14 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	cipherTextMarshal, _ := json.Marshal(filedata.CipherText)
 	signature, _ := userlib.HMACEval(macKeytoUse, cipherTextMarshal)
 	if !userlib.HMACEqual(signature, filedata.Sigma) {
-		return nil, errors.New("file data corrupted") // should we remove these entries if they are corrupted?
+		return nil, errors.New("file data corrupted") // should we remove these entries from the datastore if they are corrupted?
 	}
 
 	// checking integrity of ListOfSharedUsers
 	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
 	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
 	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
-		return nil, errors.New("list of shared users corrupted") // should we remove these entries if they are corrupted?
+		return nil, errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
 	}
 
 	// decrypts each element in the list, and creates a new concatenated filedata to return

@@ -80,80 +80,6 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
-func TestStore(t *testing.T) {
-	t.Log("Testing StoreFile")
-	userlib.SetDebugStatus(true)
-
-	alice0001, err := InitUser("alice0001", "alice_password")
-	if err != nil {
-		// t.Error says the test fails
-		t.Error("Failed to initialize user Alice", err)
-		return
-	}
-
-	alice0001.StoreFile("file_x", []byte("My name is Barry Allen and I am the Flash"))
-	alice0001.StoreFile("file_x", []byte("I am Flash"))
-
-	alice0001.StoreFile("file_y", []byte("My name is Barry Allen and I am the Flash"))
-	alice0001.StoreFile("file_z", []byte("I'm still the Flash"))
-
-	bob0001, err := InitUser("bob0001", "bob_password")
-	if err != nil {
-		// t.Error says the test fails
-		t.Error("Failed to initialize user Bob", err)
-		return
-	}
-
-	bob0001.StoreFile("file_x", []byte("Alice think's she's the Flash, but she's not"))
-	bob0001.StoreFile("file_a", []byte("I am the Flash"))
-
-	aliceFilexEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_x"+alice0001.Username+"enc"))
-	aliceFilexEnc, _ := userlib.HMACEval(aliceFilexEnckey[0:16], []byte("file_x"))
-	aliceFilexUUID := bytesToUUID(aliceFilexEnc)
-
-	aliceFileyEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_y"+alice0001.Username+"enc"))
-	aliceFileyEnc, _ := userlib.HMACEval(aliceFileyEnckey[0:16], []byte("file_y"))
-	aliceFileyUUID := bytesToUUID(aliceFileyEnc)
-
-	aliceFilezEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_z"+alice0001.Username+"enc"))
-	aliceFilezEnc, _ := userlib.HMACEval(aliceFilezEnckey[0:16], []byte("file_z"))
-	aliceFilezUUID := bytesToUUID(aliceFilezEnc)
-
-	bobFilexEnckey, _ := userlib.HMACEval(bob0001.SourceKey, []byte("file_x"+bob0001.Username+"enc"))
-	bobFilexEnc, _ := userlib.HMACEval(bobFilexEnckey[0:16], []byte("file_x"))
-	bobFilexUUID := bytesToUUID(bobFilexEnc)
-
-	bobFileaEnckey, _ := userlib.HMACEval(bob0001.SourceKey, []byte("file_a"+bob0001.Username+"enc"))
-	bobFileaEnc, _ := userlib.HMACEval(bobFileaEnckey[0:16], []byte("file_a"))
-	bobFileaUUID := bytesToUUID(bobFileaEnc)
-
-	alice0001Enc, _ := userlib.HMACEval(alice0001.HmacKey[0:16], []byte(alice0001.Username))
-	alice0001UUID := bytesToUUID(alice0001Enc)
-
-	bob0001Enc, _ := userlib.HMACEval(bob0001.HmacKey[0:16], []byte(bob0001.Username))
-	bob0001UUID := bytesToUUID(bob0001Enc)
-
-	entireDatastore := userlib.DatastoreGetMap()
-
-	datastoreKeys := make([]userlib.UUID, len(entireDatastore))
-	i := 0
-	for k := range entireDatastore {
-		datastoreKeys[i] = k
-		i++
-	}
-
-	localDatastoreKeys := []userlib.UUID{aliceFilexUUID, aliceFileyUUID, aliceFilezUUID, bobFilexUUID, bobFileaUUID, alice0001UUID, bob0001UUID}
-
-	// These print statements show what is inside the two lists. Do TestLoad later to actually see if file values fetched are correct
-	//fmt.Println(localDatastoreKeys)
-	//fmt.Println(datastoreKeys)
-
-	if reflect.DeepEqual(localDatastoreKeys, datastoreKeys) {
-		t.Error("datastore keys not correct")
-		return
-	}
-}
-
 func TestGetUserError(t *testing.T) {
 	t.Log("getUserError test")
 	userlib.SetDebugStatus(true)
@@ -249,28 +175,153 @@ func TestGetUserAttack(t *testing.T) {
 	t.Log("Got user", u)
 }
 
-// func TestStorage(t *testing.T) {
-// 	// And some more tests, because
-// 	u, err := GetUser("alice", "fubar")
-// 	if err != nil {
-// 		t.Error("Failed to reload user", err)
-// 		return
-// 	}
-// 	t.Log("Loaded user", u)
+func TestStore(t *testing.T) {
+	t.Log("Testing StoreFile")
+	userlib.SetDebugStatus(true)
 
-// 	v := []byte("This is a test")
-// 	u.StoreFile("file1", v)
+	alice0001, err := InitUser("alice0001", "alice_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user alice0001", err)
+		return
+	}
 
-// 	v2, err2 := u.LoadFile("file1")
-// 	if err2 != nil {
-// 		t.Error("Failed to upload and download", err2)
-// 		return
-// 	}
-// 	if !reflect.DeepEqual(v, v2) {
-// 		t.Error("Downloaded file is not the same", v, v2)
-// 		return
-// 	}
-// }
+	alice0001.StoreFile("file_x", []byte("My name is Barry Allen and I am the Flash"))
+	alice0001.StoreFile("file_x", []byte("I am Flash"))
+
+	alice0001.StoreFile("file_y", []byte("My name is Barry Allen and I am the Flash"))
+	alice0001.StoreFile("file_z", []byte("I'm still the Flash"))
+
+	bob0001, err := InitUser("bob0001", "bob_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user bob0001", err)
+		return
+	}
+
+	bob0001.StoreFile("file_x", []byte("Alice think's she's the Flash, but she's not"))
+	bob0001.StoreFile("file_a", []byte("I am the Flash"))
+
+	aliceFilexEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_x"+alice0001.Username+"enc"))
+	aliceFilexEnc, _ := userlib.HMACEval(aliceFilexEnckey[0:16], []byte("file_x"))
+	aliceFilexUUID := bytesToUUID(aliceFilexEnc)
+
+	aliceFileyEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_y"+alice0001.Username+"enc"))
+	aliceFileyEnc, _ := userlib.HMACEval(aliceFileyEnckey[0:16], []byte("file_y"))
+	aliceFileyUUID := bytesToUUID(aliceFileyEnc)
+
+	aliceFilezEnckey, _ := userlib.HMACEval(alice0001.SourceKey, []byte("file_z"+alice0001.Username+"enc"))
+	aliceFilezEnc, _ := userlib.HMACEval(aliceFilezEnckey[0:16], []byte("file_z"))
+	aliceFilezUUID := bytesToUUID(aliceFilezEnc)
+
+	bobFilexEnckey, _ := userlib.HMACEval(bob0001.SourceKey, []byte("file_x"+bob0001.Username+"enc"))
+	bobFilexEnc, _ := userlib.HMACEval(bobFilexEnckey[0:16], []byte("file_x"))
+	bobFilexUUID := bytesToUUID(bobFilexEnc)
+
+	bobFileaEnckey, _ := userlib.HMACEval(bob0001.SourceKey, []byte("file_a"+bob0001.Username+"enc"))
+	bobFileaEnc, _ := userlib.HMACEval(bobFileaEnckey[0:16], []byte("file_a"))
+	bobFileaUUID := bytesToUUID(bobFileaEnc)
+
+	alice0001Enc, _ := userlib.HMACEval(alice0001.HmacKey[0:16], []byte(alice0001.Username))
+	alice0001UUID := bytesToUUID(alice0001Enc)
+
+	bob0001Enc, _ := userlib.HMACEval(bob0001.HmacKey[0:16], []byte(bob0001.Username))
+	bob0001UUID := bytesToUUID(bob0001Enc)
+
+	entireDatastore := userlib.DatastoreGetMap()
+
+	datastoreKeys := make([]userlib.UUID, len(entireDatastore))
+	i := 0
+	for k := range entireDatastore {
+		datastoreKeys[i] = k
+		i++
+	}
+
+	localDatastoreKeys := []userlib.UUID{aliceFilexUUID, aliceFileyUUID, aliceFilezUUID, bobFilexUUID, bobFileaUUID, alice0001UUID, bob0001UUID}
+
+	// These print statements show what is inside the two lists. Do TestLoad later to actually see if file values fetched are correct
+	//fmt.Println(localDatastoreKeys)
+	//fmt.Println(datastoreKeys)
+
+	if reflect.DeepEqual(localDatastoreKeys, datastoreKeys) {
+		t.Error("datastore keys not correct")
+		return
+	}
+}
+
+func TestLoadFile(t *testing.T) {
+	t.Log("Testing StoreFile")
+	userlib.SetDebugStatus(true)
+
+	alice0002, err := InitUser("alice0002", "alice_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user alice0002", err)
+		return
+	}
+
+	bob0002, err := InitUser("bob0002", "bob_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user bob0002", err)
+		return
+	}
+
+	alice0002.StoreFile("file1", []byte("pizza does not belong on pepperoni"))
+	alice0002.StoreFile("file2", []byte("Bob, I think the government is onto me."))
+
+	alicefile1, _ := alice0002.LoadFile("file1")
+	if !reflect.DeepEqual(alicefile1, []byte("pizza does not belong on pepperoni")) {
+		t.Error("alicefile1 contents incorrect")
+		return
+	}
+
+	alicefile2, _ := alice0002.LoadFile("file2")
+	if !reflect.DeepEqual(alicefile2, []byte("Bob, I think the government is onto me.")) {
+		t.Error("alicefile2 contents incorrect")
+		return
+	}
+
+	alice0002.StoreFile("file1", []byte("I have updated file1"))
+
+	alicefile1, _ = alice0002.LoadFile("file1")
+	if !reflect.DeepEqual(alicefile1, []byte("pizza does not belong on pepperoni")) {
+		t.Error("alicefile1 contents incorrect") // This implementation assumes calling StoreFile on an existing filename doesn't update it. Debatable
+		return
+	}
+
+	bob0002.StoreFile("file1", []byte("I like to make my filenames the same name as Alice's filenames to troll her"))
+
+	bobfile1, _ := bob0002.LoadFile("file1")
+	if !reflect.DeepEqual(bobfile1, []byte("I like to make my filenames the same name as Alice's filenames to troll her")) {
+		t.Error("bobfile1 contents incorrect")
+		return
+	}
+
+}
+
+//func TestStorage(t *testing.T) {
+//	// And some more tests, because
+//	u, err := GetUser("alice", "fubar")
+//	if err != nil {
+//		t.Error("Failed to reload user", err)
+//		return
+//	}
+//	t.Log("Loaded user", u)
+//
+//	v := []byte("This is a test")
+//	u.StoreFile("file1", v)
+//
+//	v2, err2 := u.LoadFile("file1")
+//	if err2 != nil {
+//		t.Error("Failed to upload and download", err2)
+//		return
+//	}
+//	if !reflect.DeepEqual(v, v2) {
+//		t.Error("Downloaded file is not the same", v, v2)
+//		return
+//	}
+//}
 
 // func TestShare(t *testing.T) {
 // 	u, err := GetUser("alice", "fubar")
