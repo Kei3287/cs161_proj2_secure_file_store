@@ -83,7 +83,7 @@ type User struct {
 	Username    string
 	SourceKey   []byte
 	HmacKey     []byte
-	EncKey      []byte
+	SymKey      []byte
 	UserUUID    uuid.UUID
 	RsaSk       userlib.PKEDecKey
 	DsSk        userlib.DSSignKey
@@ -144,6 +144,19 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 
+	// generate other keys
+	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	hmacKey, symKey := generateKeysForDataStore(username, sourceKey)
+
+	// check if username already exists
+	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
+	userUUID := bytesToUUID(filename)
+	// if a user with the same username and password exists, return an error
+
+	if _, ok := userlib.KeystoreGet(username + "enc"); ok {
+		return nil, errors.New("Username already exists")
+	}
+
 	// generate RSA encryption keys
 	rsaPk, rsaSk, _ := userlib.PKEKeyGen()
 	userlib.KeystoreSet(username+"enc", rsaPk)
@@ -152,52 +165,54 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	dsSk, dsPk, _ := userlib.DSKeyGen()
 	userlib.KeystoreSet(username+"sig", dsPk)
 
-	// generate other keys
-	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
-	hmacKey, _ := userlib.HMACEval(sourceKey, []byte(username))
-	encKey, _ := userlib.HMACEval(sourceKey, []byte(username+"1"))
-
-	// check if username already exists
-	filename, _ := userlib.HMACEval(hmacKey, []byte(username))
-	userUUID := bytesToUUID(filename)
-	if _, ok := userlib.DatastoreGet(userUUID); !ok {
-		return
-	}
-
 	// initialize User struct
 	userdataptr.Username = username
 	userdataptr.SourceKey = sourceKey
 	userdataptr.HmacKey = hmacKey
-	userdataptr.EncKey = encKey
+	userdataptr.SymKey = symKey
 	userdataptr.UserUUID = userUUID
 	userdataptr.RsaSk = rsaSk
 	userdataptr.DsSk = dsSk
 	userdataptr.SharedFiles = make(map[string]string)
 
 	userdataMarshal, _ := json.Marshal(userdata)
-	userlib.DebugMsg("userdata: %v", string(userdataMarshal))
 
 	// encrypt and store userdata in the datastore
 	var encryptedData UserEntry
 	iv := userlib.RandomBytes(16)
 	encryptedData.Iv = iv
-	encryptedData.CipherText = userlib.SymEnc(encKey, iv, userdataMarshal)
-	encryptedData.Sigma, _ = userlib.HMACEval(hmacKey, encryptedData.CipherText)
+	encryptedData.CipherText = userlib.SymEnc(userdataptr.SymKey, iv, padString(userdataMarshal)) // cipherText = iv || c
+	encryptedData.Sigma, _ = userlib.HMACEval(userdataptr.HmacKey, encryptedData.CipherText)
 
 	data, _ := json.Marshal(encryptedData)
-	userlib.DebugMsg("encrypted datatostore: %v", string(data))
 	userdataptr.StoreFile(string(filename), data)
 
 	return &userdata, nil
 }
 
-func padString(str string, length int) string {
-	for {
-		if len(str) > length {
-			return str[0:length]
-		}
-		str += "0"
+func generateKeysForDataStore(username string, sourceKey []byte) ([]byte, []byte) {
+	hmacKey, _ := userlib.HMACEval(sourceKey, []byte(username))
+	encKey, _ := userlib.HMACEval(sourceKey, []byte(username+"1"))
+	return hmacKey[0:16], encKey[0:16]
+}
+
+// pad with 0 and the last byte contains how many bytes of padding needed
+// padding reference : https://sourcegraph.com/github.com/apexskier/cryptoPadding/-/blob/ansix923.go#L17
+func padString(str []byte) []byte {
+	var padBytes int
+	if len(str)%userlib.AESBlockSize == 0 {
+		padBytes = userlib.AESBlockSize
+	} else {
+		padBytes = userlib.AESBlockSize - (len(str) % userlib.AESBlockSize)
 	}
+	padText := []byte(strings.Repeat(string([]byte{byte(0)}), padBytes-1))
+	str = append(str, append(padText, byte(padBytes))...)
+	return str
+}
+
+func unpadString(str []byte) []byte {
+	padBytes := int(str[len(str)-1])
+	return str[0 : len(str)-padBytes]
 }
 
 // This fetches the user information from the Datastore.  It should
@@ -219,7 +234,25 @@ func padString(str string, length int) string {
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
+	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
+	hmacKey, symKey := generateKeysForDataStore(username, sourceKey)
+	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
+	userUUID := bytesToUUID(filename)
+	marshalData, ok := userlib.DatastoreGet(userUUID)
+	_, usernameOk := userlib.KeystoreGet(username + "enc")
+	if !ok || !usernameOk {
+		return nil, errors.New("The username doesn't exist or wrong password")
+	}
+	var data UserEntry
+	json.Unmarshal(marshalData, &data)
 
+	signature, _ := userlib.HMACEval(hmacKey, data.CipherText)
+	if !userlib.HMACEqual(signature, data.Sigma) {
+		return nil, errors.New("data corrupted")
+	}
+	decryptedData := userlib.SymDec(symKey, data.CipherText)
+	userdataMarshal := unpadString(decryptedData)
+	json.Unmarshal(userdataMarshal, userdataptr)
 	return userdataptr, nil
 }
 
