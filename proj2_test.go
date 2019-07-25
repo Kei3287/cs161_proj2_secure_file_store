@@ -298,6 +298,14 @@ func TestLoadFile(t *testing.T) {
 		return
 	}
 
+	bob0002.StoreFile("Bob's Favorite File", []byte("I have been tracked down by Dr. Phil and must retreat back into the woods"))
+
+	bobfilefavorite, _ := bob0002.LoadFile("Bob's Favorite File")
+	if !reflect.DeepEqual(bobfilefavorite, []byte("I have been tracked down by Dr. Phil and must retreat back into the woods")) {
+		t.Error("bobfile1 contents incorrect")
+		return
+	}
+
 }
 
 //func TestStorage(t *testing.T) {
