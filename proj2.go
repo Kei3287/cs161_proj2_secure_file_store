@@ -7,6 +7,7 @@ package proj2
 import (
 	// You neet to add with
 	// go get github.com/nweaver/cs161-p2/userlib
+
 	"github.com/ryanleh/cs161-p2/userlib"
 
 	// Life is much easier with json:  You are
@@ -366,14 +367,15 @@ func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
 	sourceKey := userdata.SourceKey
-	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, sourceKey)
+	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
+	sharedfileMacKey, _ := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
 
 	// creating the fileUUID to see if it exists in the datastore already
-	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
+	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
 
 	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey[0:16], sharedfileMacKey)
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
 	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
 
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
@@ -394,7 +396,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		macKeytoUse = fileMacKey
 	} else if sharedfileOk {
 		fileMarshalToUse = sharedfileMarshal
-		encKeytoUse = sharedfileEncKey
+		//encKeytoUse = sharedfileEncKey
 		macKeytoUse = sharedfileMacKey
 	}
 
@@ -412,6 +414,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
 	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
 	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
+
 		return errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
 	}
 
