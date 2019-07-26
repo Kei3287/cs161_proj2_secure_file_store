@@ -631,10 +631,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 	if err != nil {
 		return err
 	}
-
-	sharedfileMacKey := keys[0:16]
-	sharedfileEncKey := keys[16:32]
-	userdata.SharedFiles[filename] = append(sharedfileMacKey, sharedfileEncKey...)
+	userdata.SharedFiles[filename] = keys
 	return nil
 }
 
