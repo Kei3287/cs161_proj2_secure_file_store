@@ -275,7 +275,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 - fileUUID = bytesToUUID(HMAC(k3, filename))
 - sharedfileUUID = bytesToUUID(HMAC(k6, k7))
 
-- Check if fileUUID or sharedfileUUID already exists in datastore. If so, return
+- Check if fileUUID or sharedfileUUID already exists in datastore. If so, return (*or replace old file contents)
 
 - create fileData struct
 - populate fileData with signature, ciphertext, and list_of_shared_people
@@ -289,6 +289,8 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	sourceKey := userdata.SourceKey
 	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
 	fileEncKey = fileEncKey[0:16]
+	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sig"))
+	fileMacKey = fileMacKey[0:16]
 	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
 	sharedfileEncKey = sharedfileEncKey[0:16]
 	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
@@ -318,15 +320,15 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	encryptedData.Iv = iv
 	encryptedData.CipherText = append(encryptedData.CipherText, userlib.SymEnc(fileEncKey, iv, padString(data))) // list of encrypted filedata
 
-	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)                               // marshalling so I can pass this into sigma
-	encryptedData.Sigma, _ = userlib.HMACEval(sharedfileMacKey[0:16], []byte(ciphertextMarshal)) // sigma on the filedata
+	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)                   // marshalling so I can pass this into sigma
+	encryptedData.Sigma, _ = userlib.HMACEval(fileMacKey, []byte(ciphertextMarshal)) // sigma on the filedata
 
-	encryptedUsername, _ := userlib.HMACEval(userdata.HmacKey[0:16], []byte(userdata.Username))
+	encryptedUsername, _ := userlib.HMACEval(userdata.HmacKey, []byte(userdata.Username))
 	userUUID := bytesToUUID(encryptedUsername)
 	encryptedData.ListOfSharedUsers = append(encryptedData.ListOfSharedUsers, userUUID) // list of UUID of people who can access file. First entry is owner
 
 	sharedMarshal, _ := json.Marshal(encryptedData.ListOfSharedUsers)
-	encryptedData.SigmaSharedUsers, _ = userlib.HMACEval(sharedfileMacKey[0:16], []byte(sharedMarshal)) // sigma on the list of shared users
+	encryptedData.SigmaSharedUsers, _ = userlib.HMACEval(fileMacKey, []byte(sharedMarshal)) // sigma on the list of shared users
 
 	encryptedDataMarshal, _ := json.Marshal(encryptedData)
 
@@ -348,9 +350,83 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 // This loads a file from the Datastore.
 //
 // It should give an error if the file is corrupted in any way.
-func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
-	return
+/*LoadFile
+- calculate fileUUID from filename
+- return error if fileUUID not in datastore
+- we use different keys depending on if we're loading a shared or not-shared file
+- check integrity of file
+- decrypt
+*/
+func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
+	sourceKey := userdata.SourceKey
+	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
+	fileEncKey = fileEncKey[0:16]
+	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sig"))
+	fileMacKey = fileMacKey[0:16]
+	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
+	sharedfileEncKey = sharedfileEncKey[0:16]
+	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
+	sharedfileMacKey = sharedfileMacKey[0:16]
+
+	// creating the fileUUID to see if it exists in the datastore already
+	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
+	fileUUID := bytesToUUID(encryptedFilename)
+
+	// creating the sharedfileUUID to see if it exists in the datastore already
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey[0:16], sharedfileMacKey)
+	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
+
+	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
+	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
+
+	if !fileOk && !sharedfileOk {
+		return nil, errors.New("Your requested file isn't in the DataStore")
+	}
+
+	// depending on if the file we load is shared or not, we use different keys
+	var fileMarshalToUse []byte
+	var encKeytoUse []byte
+	var macKeytoUse []byte
+
+	if fileOk {
+		fileMarshalToUse = fileMarshal
+		encKeytoUse = fileEncKey
+		macKeytoUse = fileMacKey
+	} else if sharedfileOk {
+		fileMarshalToUse = sharedfileMarshal
+		encKeytoUse = sharedfileEncKey
+		macKeytoUse = sharedfileMacKey
+	}
+
+	var filedata FileEntry
+	json.Unmarshal(fileMarshalToUse, &filedata)
+
+	// checking integrity of ciphertext
+	cipherTextMarshal, _ := json.Marshal(filedata.CipherText)
+	signature, _ := userlib.HMACEval(macKeytoUse, cipherTextMarshal)
+	if !userlib.HMACEqual(signature, filedata.Sigma) {
+		return nil, errors.New("file data corrupted") // should we remove these entries from the datastore if they are corrupted?
+	}
+
+	// checking integrity of ListOfSharedUsers
+	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
+	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
+	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
+		return nil, errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
+	}
+
+	// decrypts each element in the list, and creates a new concatenated filedata to return
+	var decryptedFileData []byte
+	for _, slice := range filedata.CipherText {
+		decryptedSlice := userlib.SymDec(encKeytoUse, slice)
+		decryptedFileData = append(decryptedFileData, decryptedSlice...)
+	}
+
+	decryptedFileData = unpadString(decryptedFileData)
+
+	return decryptedFileData, nil
 }
 
 // You may want to define what you actually want to pass as a
