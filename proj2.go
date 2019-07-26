@@ -200,6 +200,15 @@ func generateKeysForDataStore(username string, sourceKey []byte, hmacKeySalt []b
 	return hmacKey[0:16], encKey[0:16]
 }
 
+func generateFileKeysForDataStore(filename string, username string, sourceKey []byte) ([]byte, []byte, []byte, []byte) {
+	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"enc"))
+	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"sig"))
+	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"shareenc"))
+	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"sharesig"))
+
+	return fileEncKey[0:16], fileMacKey[0:16], sharedfileEncKey[0:16], sharedfileMacKey[0:16]
+}
+
 // pad with 0 and the last byte contains how many bytes of padding needed
 // padding reference : https://sourcegraph.com/github.com/apexskier/cryptoPadding/-/blob/ansix923.go#L17
 func padString(str []byte) []byte {
@@ -349,7 +358,71 @@ func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename
 // existing file, but only whatever additional information and
 // metadata you need.
 
+/*AppendFile
+- Find fileUUID for filename in datastore (return error if not found)
+- Validate fileEntry for integrity
+- Add the new encrypted data to the list of ciphertexts and recompute the HMAC signature
+*/
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
+	sourceKey := userdata.SourceKey
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, sourceKey)
+
+	// creating the fileUUID to see if it exists in the datastore already
+	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
+	fileUUID := bytesToUUID(encryptedFilename)
+
+	// creating the sharedfileUUID to see if it exists in the datastore already
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey[0:16], sharedfileMacKey)
+	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
+
+	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
+	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
+
+	if !fileOk && !sharedfileOk {
+		return errors.New("Can't append, file requested not in datastore")
+	}
+
+	// depending on if the file we want to append to is shared or not, we use different keys
+	var fileMarshalToUse []byte
+	var encKeytoUse []byte
+	var macKeytoUse []byte
+
+	if fileOk {
+		fileMarshalToUse = fileMarshal
+		encKeytoUse = fileEncKey
+		macKeytoUse = fileMacKey
+	} else if sharedfileOk {
+		fileMarshalToUse = sharedfileMarshal
+		encKeytoUse = sharedfileEncKey
+		macKeytoUse = sharedfileMacKey
+	}
+
+	var filedata FileEntry
+	json.Unmarshal(fileMarshalToUse, &filedata)
+
+	// checking integrity of ciphertext
+	cipherTextMarshal, _ := json.Marshal(filedata.CipherText)
+	signature, _ := userlib.HMACEval(macKeytoUse, cipherTextMarshal)
+	if !userlib.HMACEqual(signature, filedata.Sigma) {
+		return errors.New("file data corrupted") // should we remove these entries from the datastore if they are corrupted?
+	}
+
+	// checking integrity of ListOfSharedUsers
+	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
+	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
+	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
+		return errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
+	}
+
+	// encrypt data and append new encrypted data to the cyphertext list
+	filedata.CipherText = append(filedata.CipherText, userlib.SymEnc(encKeytoUse, filedata.Iv, padString(data)))
+	ciphertextMarshal, _ := json.Marshal(filedata.CipherText)                    // marshalling so I can pass this into sigma
+	filedata.Sigma, _ = userlib.HMACEval(macKeytoUse, []byte(ciphertextMarshal)) // update sigma on the filedata
+
+	encryptedDataMarshal, _ := json.Marshal(filedata)
+	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
+
 	return
 	// make sure that the entry exists before appending
 }
@@ -429,9 +502,8 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	for _, slice := range filedata.CipherText {
 		decryptedSlice := userlib.SymDec(encKeytoUse, slice)
 		decryptedFileData = append(decryptedFileData, decryptedSlice...)
+		decryptedFileData = unpadString(decryptedFileData)
 	}
-
-	decryptedFileData = unpadString(decryptedFileData)
 
 	return decryptedFileData, nil
 }
