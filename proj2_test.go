@@ -4,6 +4,7 @@ import (
 	_ "encoding/hex"
 	_ "encoding/json"
 	_ "errors"
+	"fmt"
 	"reflect"
 	_ "strconv"
 	_ "strings"
@@ -250,7 +251,7 @@ func TestStore(t *testing.T) {
 }
 
 func TestLoadFile(t *testing.T) {
-	t.Log("Testing StoreFile")
+	t.Log("Testing LoadFile")
 	userlib.SetDebugStatus(true)
 
 	alice0002, err := InitUser("alice0002", "alice_password")
@@ -305,7 +306,53 @@ func TestLoadFile(t *testing.T) {
 		t.Error("bobfile1 contents incorrect")
 		return
 	}
+}
 
+func TestAppendFile(t *testing.T) {
+	t.Log("Testing AppendFile")
+	userlib.SetDebugStatus(true)
+
+	alice0003, err := InitUser("alice0003", "alice_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user alice0003", err)
+		return
+	}
+
+	bob0003, err := InitUser("bob0003", "bob_password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user bob0003", err)
+		return
+	}
+
+	alice0003.StoreFile("file1", []byte("Hello. I am Alic"))
+	alice0003.AppendFile("file1", []byte("e."))
+	alicefile1, _ := alice0003.LoadFile("file1")
+
+	fmt.Println(alicefile1)
+
+	if !reflect.DeepEqual(alicefile1, []byte("Hello. I am Alice.")) {
+		t.Error("alicefile1 contents incorrect")
+		return
+	}
+
+	// Useful to do another test for storefile file1 and load it back again.
+	// That will be needed if we change the implementation so that storing a file with the same name updates it instead of return nil
+
+	err = bob0003.AppendFile("file1", []byte("I am a rebel. I append things to files that don't even exist"))
+	if err == nil {
+		t.Error("failed to catch error: appending file to non-existing file is supposed to error")
+	}
+
+	bob0003.StoreFile("file1", []byte("Okay, okay proj2 testers. I will create a file1 that actually exists."))
+	bob0003.AppendFile("file1", []byte("...adding more dots bc I'm salty"))
+	bobfile1, _ := bob0003.LoadFile("file1")
+
+	if !reflect.DeepEqual(bobfile1, []byte("Okay, okay proj2 testers. I will create a file1 that actually exists....adding more dots bc I'm salty")) {
+		t.Error("bobfile1 contents incorrect")
+		return
+	}
 }
 
 //func TestStorage(t *testing.T) {
