@@ -80,14 +80,15 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 
 // The structure definition for a user record
 type User struct {
-	Username    string
-	SourceKey   []byte
-	HmacKey     []byte
-	SymKey      []byte
-	UserUUID    uuid.UUID
-	RsaSk       userlib.PKEDecKey
-	DsSk        userlib.DSSignKey
-	SharedFiles map[string]string
+	Username         string
+	SourceKey        []byte
+	HmacKey          []byte
+	SymKey           []byte
+	UserUUID         uuid.UUID
+	RsaSk            userlib.PKEDecKey
+	DsSk             userlib.DSSignKey
+	SharedFiles      map[string][]byte
+	ListOfOwnedFiles map[string]bool // the list of filenames where the user is the original owner of the file
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
 }
@@ -101,9 +102,9 @@ type UserEntry struct {
 type FileEntry struct {
 	CipherText        [][]byte // each file entry is a list of encrypted files
 	Sigma             []byte
+	SigmaSharedUsers  []byte
 	Iv                []byte
 	ListOfSharedUsers []uuid.UUID
-	SigmaSharedUsers  []byte
 }
 
 // This creates a user.  It will only be called once for a user
@@ -152,9 +153,8 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	// check if username already exists
 	filename, _ := userlib.HMACEval(hmacKey, []byte(username))
 	userUUID := bytesToUUID(filename)
-	// if a user with the same username and password exists, return an error
-
 	if _, ok := userlib.KeystoreGet(username + "enc"); ok {
+		// if a user with the same username exists, return an error
 		return nil, errors.New("Username already exists")
 	}
 
@@ -174,7 +174,8 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdataptr.UserUUID = userUUID
 	userdataptr.RsaSk = rsaSk
 	userdataptr.DsSk = dsSk
-	userdataptr.SharedFiles = make(map[string]string)
+	userdataptr.SharedFiles = make(map[string][]byte)
+	userdataptr.ListOfOwnedFiles = make(map[string]bool)
 
 	userdataMarshal, _ := json.Marshal(userdata)
 
@@ -288,18 +289,19 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, data []byte) {
 	sourceKey := userdata.SourceKey
 	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
-	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	sharedfileMacKey, _ := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
 
-	// TODO: sharedFile keys should be taken from userdata struct because if the user is not the owner, user cannot create the sharedKey from their username and passowrd
-	// sharedfileMacKey := userdata.SharedFiles[filename][0:16]
-	// sharedfileEncKey := userdata.SharedFiles[filename][16:32]
+	// sharedFile keys should be taken from userdata struct if exists
+	if _, ok := userdata.SharedFiles[filename]; ok {
+		sharedfileMacKey = userdata.SharedFiles[filename][0:16]
+	}
 
 	// creating the fileUUID to see if it exists in the datastore already
-	encryptedFilename, _ := userlib.HMACEval(fileEncKey, []byte(filename))
-	fileUUID := bytesToUUID(encryptedFilename)
+	hashedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
+	fileUUID := bytesToUUID(hashedFilename)
 
 	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey, sharedfileMacKey)
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
 	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
 
 	if _, ok := userlib.DatastoreGet(fileUUID); ok {
@@ -313,26 +315,32 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	}
 
 	// filling in the FileEntry
-	var encryptedData FileEntry
-	iv := userlib.RandomBytes(16)
-	encryptedData.Iv = iv
-	encryptedData.CipherText = append(encryptedData.CipherText, userlib.SymEnc(fileEncKey, iv, padString(data))) // list of encrypted filedata
-
-	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)                   // marshalling so I can pass this into sigma
-	encryptedData.Sigma, _ = userlib.HMACEval(fileMacKey, []byte(ciphertextMarshal)) // sigma on the filedata
-
-	encryptedUsername, _ := userlib.HMACEval(userdata.HmacKey, []byte(userdata.Username))
-	userUUID := bytesToUUID(encryptedUsername)
-	encryptedData.ListOfSharedUsers = append(encryptedData.ListOfSharedUsers, userUUID) // list of UUID of people who can access file. First entry is owner
-
-	sharedMarshal, _ := json.Marshal(encryptedData.ListOfSharedUsers)
-	encryptedData.SigmaSharedUsers, _ = userlib.HMACEval(fileMacKey, []byte(sharedMarshal)) // sigma on the list of shared users
-
-	encryptedDataMarshal, _ := json.Marshal(encryptedData)
-
-	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
+	storeData(fileEncKey, data, fileMacKey, hashedFilename, userdata.Username)
+	userdata.ListOfOwnedFiles[filename] = true
 
 	return
+}
+
+func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename []byte, username string) {
+	var encryptedData FileEntry
+	fileUUID := bytesToUUID(hashedFilename)
+	iv := userlib.RandomBytes(16)
+	encryptedData.Iv = iv
+	encryptedData.CipherText = append(encryptedData.CipherText, userlib.SymEnc(fileEncKey, iv, padString(data)))
+	// list of encrypted filedata
+	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)
+	// marshalling so I can pass this into sigma
+	encryptedData.Sigma, _ = userlib.HMACEval(fileMacKey, []byte(ciphertextMarshal))
+	// sigma on the filedata
+	encryptedUsername, _ := userlib.HMACEval(fileMacKey, []byte(username))
+	userUUID := bytesToUUID(encryptedUsername)
+	encryptedData.ListOfSharedUsers = append(encryptedData.ListOfSharedUsers, userUUID)
+	// list of UUID of people who can access file. First entry is owner
+	sharedMarshal, _ := json.Marshal(encryptedData.ListOfSharedUsers)
+	encryptedData.SigmaSharedUsers, _ = userlib.HMACEval(fileMacKey, []byte(sharedMarshal))
+	// sigma on the list of shared users
+	encryptedDataMarshal, _ := json.Marshal(encryptedData)
+	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
 }
 
 // This adds on to an existing file.
@@ -363,16 +371,18 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
 	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
 
-	// TODO: sharedFile keys should be taken from userdata struct because if the user is not the owner, user cannot create the sharedKey from their username and passowrd
-	// sharedfileMacKey := userdata.SharedFiles[filename][0:16]
-	// sharedfileEncKey := userdata.SharedFiles[filename][16:32]
+	// sharedFile keys should be taken from userdata struct if exists
+	if _, ok := userdata.SharedFiles[filename]; ok {
+		sharedfileMacKey = userdata.SharedFiles[filename][0:16]
+		sharedfileEncKey = userdata.SharedFiles[filename][16:32]
+	}
 
 	// creating the fileUUID to see if it exists in the datastore already
-	encryptedFilename, _ := userlib.HMACEval(fileEncKey, []byte(filename))
+	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
 
 	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey, sharedfileMacKey)
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
 	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
 
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
@@ -429,6 +439,8 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // You may want to define what you actually want to pass as a
 // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
+	CipherText []byte
+	Sigma      []byte
 }
 
 // This creates a sharing record, which is a key pointing to something
@@ -455,7 +467,6 @@ type sharingRecord struct {
 - k6 = HMACEval(sourceKey, filename + username + "shareEnc")
 - k7 = HMACEval(sourceKey, filename + username + "shareSig")
 - magic_string = DSSign(sender's private key, PKEEnc(recipient's public key, k6||k7))
-
 - fileUUID = bytesToUUID(HMAC(k4, filename))
 - sharedfileUUID = bytesToUUID(HMAC(k6, k7))
 
@@ -466,18 +477,89 @@ type sharingRecord struct {
 
 - Later, if Bob calls receiveFile, he will verify & decrypt magic_string, and use k6, k7 to calculate the sharedfileUUID
 */
-func (userdata *User) ShareFile(filename string, recipient string) (
-	magic_string string, err error) {
+func (userdata *User) ShareFile(filename string, recipient string) (magic_string string, err error) {
+	recipientPk, ok := userlib.KeystoreGet(userdata.Username + "enc")
+	if !ok {
+		return "", errors.New("invalid recipient")
+	}
 
-	return
+	var sharingEntry sharingRecord
+	var sharedfileMacKey []byte
+	var sharedfileEncKey []byte
+	keys, isShared := userdata.SharedFiles[filename]
+	if isShared {
+		// if the file has been shared with somebody before, we simply share the symmetric keys
+		sharedfileMacKey = keys[0:16]
+		sharedfileEncKey = keys[16:32]
+		hashedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
+		sharedFileUUID := bytesToUUID(hashedFilename)
+		if _, ok := userlib.DatastoreGet(sharedFileUUID); !ok {
+			// if the file was revoked or an attacker deleted the file, we can't share the file
+			return "", errors.New("File deleted.")
+		}
+		// initialize sharing
+		keys = append(sharedfileMacKey, sharedfileEncKey...)
+		sharingEntry.CipherText, _ = userlib.PKEEnc(recipientPk, keys)
+		sharingEntry.Sigma, _ = userlib.DSSign(userdata.DsSk, sharingEntry.CipherText)
+		sharingEntryMarshal, _ := json.Marshal(sharingEntry)
+		return string(sharingEntryMarshal), nil
+	}
+	// if the file has never been shared before, it means the user if the owner of the file
+
+	// retrieve the original data & delete the original entry
+	originalData, error := userdata.LoadFile(filename)
+	if error != nil {
+		return "", errors.New("Data failed to load.")
+	}
+	deleteDataEntry(userdata.SourceKey, userdata.Username, filename)
+
+	// create new shared symmetric keys
+	sharedfileMacKey, sharedfileEncKey = generateKeysForDataStore(userdata.Username, userdata.SourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	userdata.SharedFiles[filename] = append(sharedfileMacKey, sharedfileEncKey...)
+	hashedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
+
+	// store the original data into a new entry shared with the recipient
+	storeData(sharedfileEncKey, originalData, sharedfileMacKey, hashedFilename, userdata.Username)
+
+	// initialize sharing
+	keys = append(sharedfileMacKey, sharedfileEncKey...)
+	sharingEntry.CipherText, _ = userlib.PKEEnc(recipientPk, keys)
+	sharingEntry.Sigma, _ = userlib.DSSign(userdata.DsSk, sharingEntry.CipherText)
+	sharingEntryMarshal, _ := json.Marshal(sharingEntry)
+	return string(sharingEntryMarshal), nil
+}
+
+func deleteDataEntry(sourceKey []byte, username string, filename string) {
+	fileMacKey, _ := generateKeysForDataStore(username, sourceKey, []byte(filename+username+"sig"), []byte(filename+username+"enc"))
+	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
+	fileUUID := bytesToUUID(encryptedFilename)
+	userlib.DatastoreDelete(fileUUID)
 }
 
 // Note recipient's filename can be different from the sender's filename.
 // The recipient should not be able to discover the sender's view on
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
-func (userdata *User) ReceiveFile(filename string, sender string,
-	magic_string string) error {
+func (userdata *User) ReceiveFile(filename string, sender string, magic_string string) error {
+	if _, ok := userdata.SharedFiles[filename]; ok {
+		return errors.New("File already shared with someone")
+	}
+
+	senderDsPk, ok := userlib.KeystoreGet(sender + "sig")
+	if !ok {
+		return errors.New("invalid sender")
+	}
+	var sharingEntry sharingRecord
+	json.Unmarshal([]byte(magic_string), &sharingEntry)
+	err := userlib.DSVerify(senderDsPk, sharingEntry.CipherText, sharingEntry.Sigma)
+	if err != nil {
+		return err
+	}
+	keys, err := userlib.PKEDec(userdata.RsaSk, sharingEntry.CipherText)
+	userlib.DebugMsg("length: %v", len(keys))
+	sharedfileMacKey := keys[0:16]
+	sharedfileEncKey := keys[16:32]
+	userdata.SharedFiles[filename] = append(sharedfileMacKey, sharedfileEncKey...)
 	return nil
 }
 
