@@ -472,6 +472,11 @@ func TestRevoke(t *testing.T) {
 		return
 	}
 
+	if !reflect.DeepEqual(v, []byte("pizza does not belong on pepperoni")) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
 	v2, err = u2.LoadFile("file002")
 	if err == nil {
 		t.Error("Failed to catch an error", err)
@@ -479,14 +484,9 @@ func TestRevoke(t *testing.T) {
 	}
 	err2 = u2.ReceiveFile("file002", "alice13", magic_string)
 	v2, err2 = u2.LoadFile("file002")
-	if err2 != nil {
-		t.Log("should return nil")
+	if err2 == nil {
+		t.Error("Failed to catch an error", err)
 		return
 	}
-
-	t.Error("Failed to catch an error", err)
-	if !reflect.DeepEqual(v, v2) {
-		t.Error("Shared file is not the same", v, v2)
-		return
-	}
+	t.Log("should return nil")
 }
