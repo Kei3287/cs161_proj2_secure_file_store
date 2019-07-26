@@ -290,6 +290,10 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
 	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
 
+	// TODO: sharedFile keys should be taken from userdata struct because if the user is not the owner, user cannot create the sharedKey from their username and passowrd
+	// sharedfileMacKey := userdata.SharedFiles[filename][0:16]
+	// sharedfileEncKey := userdata.SharedFiles[filename][16:32]
+
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileEncKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
@@ -356,21 +360,19 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
 	sourceKey := userdata.SourceKey
-	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
-	fileEncKey = fileEncKey[0:16]
-	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sig"))
-	fileMacKey = fileMacKey[0:16]
-	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
-	sharedfileEncKey = sharedfileEncKey[0:16]
-	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
-	sharedfileMacKey = sharedfileMacKey[0:16]
+	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
+	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+
+	// TODO: sharedFile keys should be taken from userdata struct because if the user is not the owner, user cannot create the sharedKey from their username and passowrd
+	// sharedfileMacKey := userdata.SharedFiles[filename][0:16]
+	// sharedfileEncKey := userdata.SharedFiles[filename][16:32]
 
 	// creating the fileUUID to see if it exists in the datastore already
-	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
+	encryptedFilename, _ := userlib.HMACEval(fileEncKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
 
 	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey[0:16], sharedfileMacKey)
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey, sharedfileMacKey)
 	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
 
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
@@ -402,7 +404,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	cipherTextMarshal, _ := json.Marshal(filedata.CipherText)
 	signature, _ := userlib.HMACEval(macKeytoUse, cipherTextMarshal)
 	if !userlib.HMACEqual(signature, filedata.Sigma) {
-		return nil, errors.New("file data corrupted") // should we remove these entries from the datastore if they are corrupted?
+		return nil, errors.New("file data corrupted") // TODO: should we remove these entries from the datastore if they are corrupted?
 	}
 
 	// checking integrity of ListOfSharedUsers
