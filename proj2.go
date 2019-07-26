@@ -200,6 +200,15 @@ func generateKeysForDataStore(username string, sourceKey []byte) ([]byte, []byte
 	return hmacKey[0:16], encKey[0:16]
 }
 
+func generateFileKeysForDataStore(filename string, username string, sourceKey []byte) ([]byte, []byte, []byte, []byte) {
+	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"enc"))
+	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"sig"))
+	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"shareenc"))
+	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+username+"sharesig"))
+
+	return fileEncKey[0:16], fileMacKey[0:16], sharedfileEncKey[0:16], sharedfileMacKey[0:16]
+}
+
 // pad with 0 and the last byte contains how many bytes of padding needed
 // padding reference : https://sourcegraph.com/github.com/apexskier/cryptoPadding/-/blob/ansix923.go#L17
 func padString(str []byte) []byte {
@@ -287,14 +296,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 */
 func (userdata *User) StoreFile(filename string, data []byte) {
 	sourceKey := userdata.SourceKey
-	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
-	fileEncKey = fileEncKey[0:16]
-	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sig"))
-	fileMacKey = fileMacKey[0:16]
-	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
-	sharedfileEncKey = sharedfileEncKey[0:16]
-	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
-	sharedfileMacKey = sharedfileMacKey[0:16]
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, sourceKey)
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
@@ -351,14 +353,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
 	sourceKey := userdata.SourceKey
-	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
-	fileEncKey = fileEncKey[0:16]
-	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sig"))
-	fileMacKey = fileMacKey[0:16]
-	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
-	sharedfileEncKey = sharedfileEncKey[0:16]
-	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
-	sharedfileMacKey = sharedfileMacKey[0:16]
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, sourceKey)
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
@@ -432,14 +427,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
 	sourceKey := userdata.SourceKey
-	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
-	fileEncKey = fileEncKey[0:16]
-	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sig"))
-	fileMacKey = fileMacKey[0:16]
-	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
-	sharedfileEncKey = sharedfileEncKey[0:16]
-	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
-	sharedfileMacKey = sharedfileMacKey[0:16]
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, sourceKey)
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
