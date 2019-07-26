@@ -586,10 +586,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 	if error != nil {
 		return "", errors.New("Data failed to load.")
 	}
-	deleteDataEntry(userdata.SourceKey, userdata.Username, filename)
+	deleteDataEntry(userdata.SourceKey, userdata.Username, filename, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
 
 	// create new shared symmetric keys
-	sharedfileMacKey, sharedfileEncKey = generateKeysForDataStore(userdata.Username, userdata.SourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	_, _, sharedfileEncKey, sharedfileMacKey = generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 	userdata.SharedFiles[filename] = append(sharedfileMacKey, sharedfileEncKey...)
 	hashedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
 
@@ -604,8 +604,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 	return string(sharingEntryMarshal), nil
 }
 
-func deleteDataEntry(sourceKey []byte, username string, filename string) {
-	fileMacKey, _ := generateKeysForDataStore(username, sourceKey, []byte(filename+username+"sig"), []byte(filename+username+"enc"))
+func deleteDataEntry(sourceKey []byte, username string, filename string, hmacSalt []byte, encSalt []byte) {
+	fileMacKey, _ := generateKeysForDataStore(username, sourceKey, hmacSalt, encSalt)
 	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
 	userlib.DatastoreDelete(fileUUID)
@@ -631,14 +631,27 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 		return err
 	}
 	keys, err := userlib.PKEDec(userdata.RsaSk, sharingEntry.CipherText)
-
-	sharedfileMacKey := keys[0:16]
-	sharedfileEncKey := keys[16:32]
-	userdata.SharedFiles[filename] = append(sharedfileMacKey, sharedfileEncKey...)
+	if err != nil {
+		return err
+	}
+	userdata.SharedFiles[filename] = keys
 	return nil
 }
 
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
-	return
+	_, ok := userdata.ListOfOwnedFiles[filename]
+	if !ok {
+		return errors.New("You have to be the owner of the file to revoke")
+	}
+	fileEncKey, fileMacKey, _, _ := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
+	originalData, err := userdata.LoadFile(filename)
+	if err != nil {
+		return errors.New("Data failed to load.")
+	}
+	deleteDataEntry(userdata.SourceKey, userdata.Username, "magic_string", []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	delete(userdata.SharedFiles, filename)
+	hashedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
+	storeData(fileEncKey, originalData, fileMacKey, hashedFilename, userdata.Username)
+	return nil
 }

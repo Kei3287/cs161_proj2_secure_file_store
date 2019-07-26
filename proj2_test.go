@@ -304,50 +304,50 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
-func TestAppendFile(t *testing.T) {
-	t.Log("Testing AppendFile")
-	userlib.SetDebugStatus(true)
+// func TestAppendFile(t *testing.T) {
+// 	t.Log("Testing AppendFile")
+// 	userlib.SetDebugStatus(true)
 
-	alice0003, err := InitUser("alice0003", "alice_password")
-	if err != nil {
-		// t.Error says the test fails
-		t.Error("Failed to initialize user alice0003", err)
-		return
-	}
+// 	alice0003, err := InitUser("alice0003", "alice_password")
+// 	if err != nil {
+// 		// t.Error says the test fails
+// 		t.Error("Failed to initialize user alice0003", err)
+// 		return
+// 	}
 
-	bob0003, err := InitUser("bob0003", "bob_password")
-	if err != nil {
-		// t.Error says the test fails
-		t.Error("Failed to initialize user bob0003", err)
-		return
-	}
+// 	bob0003, err := InitUser("bob0003", "bob_password")
+// 	if err != nil {
+// 		// t.Error says the test fails
+// 		t.Error("Failed to initialize user bob0003", err)
+// 		return
+// 	}
 
-	alice0003.StoreFile("file1", []byte("Hello. I am Alic"))
-	alice0003.AppendFile("file1", []byte("e."))
-	alicefile1, _ := alice0003.LoadFile("file1")
+// 	alice0003.StoreFile("file1", []byte("Hello. I am Alic"))
+// 	alice0003.AppendFile("file1", []byte("e."))
+// 	alicefile1, _ := alice0003.LoadFile("file1")
 
-	if !reflect.DeepEqual(alicefile1, []byte("Hello. I am Alice.")) {
-		t.Error("alicefile1 contents incorrect")
-		return
-	}
+// 	if !reflect.DeepEqual(alicefile1, []byte("Hello. I am Alice.")) {
+// 		t.Error("alicefile1 contents incorrect")
+// 		return
+// 	}
 
-	// Useful to do another test for storefile file1 and load it back again.
-	// That will be needed if we change the implementation so that storing a file with the same name updates it instead of return nil
+// 	// Useful to do another test for storefile file1 and load it back again.
+// 	// That will be needed if we change the implementation so that storing a file with the same name updates it instead of return nil
 
-	err = bob0003.AppendFile("file1", []byte("I am a rebel. I append things to files that don't even exist"))
-	if err == nil {
-		t.Error("failed to catch error: appending file to non-existing file is supposed to error")
-	}
+// 	err = bob0003.AppendFile("file1", []byte("I am a rebel. I append things to files that don't even exist"))
+// 	if err == nil {
+// 		t.Error("failed to catch error: appending file to non-existing file is supposed to error")
+// 	}
 
-	bob0003.StoreFile("file1", []byte("Okay, okay proj2 testers. I will create a file1 that actually exists."))
-	bob0003.AppendFile("file1", []byte("...adding more dots bc I'm salty"))
-	bobfile1, _ := bob0003.LoadFile("file1")
+// 	bob0003.StoreFile("file1", []byte("Okay, okay proj2 testers. I will create a file1 that actually exists."))
+// 	bob0003.AppendFile("file1", []byte("...adding more dots bc I'm salty"))
+// 	bobfile1, _ := bob0003.LoadFile("file1")
 
-	if !reflect.DeepEqual(bobfile1, []byte("Okay, okay proj2 testers. I will create a file1 that actually exists....adding more dots bc I'm salty")) {
-		t.Error("bobfile1 contents incorrect")
-		return
-	}
-}
+// 	if !reflect.DeepEqual(bobfile1, []byte("Okay, okay proj2 testers. I will create a file1 that actually exists....adding more dots bc I'm salty")) {
+// 		t.Error("bobfile1 contents incorrect")
+// 		return
+// 	}
+// }
 
 func TestStorage(t *testing.T) {
 	u, err := InitUser("alice11", "fubar")
@@ -425,4 +425,68 @@ func TestShare(t *testing.T) {
 		return
 	}
 
+}
+
+func TestRevoke(t *testing.T) {
+	u, err := InitUser("alice13", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	u.StoreFile("file001", []byte("pizza does not belong on pepperoni"))
+	u2, err2 := InitUser("bob2", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	var v, v2 []byte
+	var magic_string string
+
+	v, err = u.LoadFile("file001")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+
+	magic_string, err = u.ShareFile("file001", "bob2")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	err = u2.ReceiveFile("file002", "alice13", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	err = u.RevokeFile("file001")
+	if err != nil {
+		t.Error("Failed to revoke the file")
+	}
+
+	v, err = u.LoadFile("file001")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+
+	if !reflect.DeepEqual(v, []byte("pizza does not belong on pepperoni")) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	v2, err = u2.LoadFile("file002")
+	if err == nil {
+		t.Error("Failed to catch an error", err)
+		return
+	}
+	err2 = u2.ReceiveFile("file002", "alice13", magic_string)
+	v2, err2 = u2.LoadFile("file002")
+	if err2 == nil {
+		t.Error("Failed to catch an error", err)
+		return
+	}
+	t.Log("should return nil")
 }
