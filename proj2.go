@@ -146,12 +146,11 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 
-	// generate other keys
 	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
-	hmacKey, symKey := generateKeysForDataStore(username, sourceKey)
+	hmacKey, symKey := generateKeysForDataStore(username, sourceKey, []byte(username), []byte(username+"1"))
 
 	// check if username already exists
-	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
+	filename, _ := userlib.HMACEval(hmacKey, []byte(username))
 	userUUID := bytesToUUID(filename)
 	// if a user with the same username and password exists, return an error
 
@@ -194,9 +193,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	return &userdata, nil
 }
 
-func generateKeysForDataStore(username string, sourceKey []byte) ([]byte, []byte) {
-	hmacKey, _ := userlib.HMACEval(sourceKey, []byte(username))
-	encKey, _ := userlib.HMACEval(sourceKey, []byte(username+"1"))
+func generateKeysForDataStore(username string, sourceKey []byte, hmacKeySalt []byte, encKeySalt []byte) ([]byte, []byte) {
+	hmacKey, _ := userlib.HMACEval(sourceKey, []byte(hmacKeySalt))
+	encKey, _ := userlib.HMACEval(sourceKey, []byte(encKeySalt))
 	return hmacKey[0:16], encKey[0:16]
 }
 
@@ -214,6 +213,7 @@ func padString(str []byte) []byte {
 	return str
 }
 
+// TODO: add error checking
 func unpadString(str []byte) []byte {
 	padBytes := int(str[len(str)-1])
 	return str[0 : len(str)-padBytes]
@@ -230,7 +230,7 @@ func unpadString(str []byte) []byte {
 - userUUID = bytesToUUID(HMACEval(k1, username))
 
 - Check if userUUID is in the datastore. If not, return error
-- a userUUID won't exist if the username/password combo is wrong (any other way to check this?)
+- a userUUID won't exist if the username or password is wrong
 - get the userEntry at userUUID
 - Take HMACEval(k1, SymEnc(k2, IV, userdata)) and verify this with userEntry
 - If not equal, return error
@@ -239,7 +239,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
-	hmacKey, symKey := generateKeysForDataStore(username, sourceKey)
+	hmacKey, symKey := generateKeysForDataStore(username, sourceKey, []byte(username), []byte(username+"1"))
 	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
 	userUUID := bytesToUUID(filename)
 	marshalData, ok := userlib.DatastoreGet(userUUID)
@@ -287,21 +287,15 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 */
 func (userdata *User) StoreFile(filename string, data []byte) {
 	sourceKey := userdata.SourceKey
-	fileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"enc"))
-	fileEncKey = fileEncKey[0:16]
-	fileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sig"))
-	fileMacKey = fileMacKey[0:16]
-	sharedfileEncKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"shareenc"))
-	sharedfileEncKey = sharedfileEncKey[0:16]
-	sharedfileMacKey, _ := userlib.HMACEval(sourceKey, []byte(filename+userdata.Username+"sharesig"))
-	sharedfileMacKey = sharedfileMacKey[0:16]
+	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
+	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
 
 	// creating the fileUUID to see if it exists in the datastore already
-	encryptedFilename, _ := userlib.HMACEval(fileEncKey[0:16], []byte(filename))
+	encryptedFilename, _ := userlib.HMACEval(fileEncKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
 
 	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey[0:16], sharedfileMacKey)
+	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileEncKey, sharedfileMacKey)
 	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
 
 	if _, ok := userlib.DatastoreGet(fileUUID); ok {
@@ -345,6 +339,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	return
+	// make sure that the entry exists before appending
 }
 
 // This loads a file from the Datastore.

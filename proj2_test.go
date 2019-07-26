@@ -70,7 +70,7 @@ func TestGetUser(t *testing.T) {
 	}
 	t.Log("Got user", u)
 	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
-	hmacKey, symKey := generateKeysForDataStore(username, sourceKey)
+	hmacKey, symKey := generateKeysForDataStore(username, sourceKey, []byte(username), []byte(username+"1"))
 	u.SymKey = symKey
 	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
 	userUUID := bytesToUUID(filename)
@@ -107,7 +107,7 @@ func TestGetUserError(t *testing.T) {
 
 func generateKeyAndUUID(username string, password string) (hmacKey []byte, symKey []byte, userUUID uuid.UUID) {
 	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
-	hmacKey, symKey = generateKeysForDataStore(username, sourceKey)
+	hmacKey, symKey = generateKeysForDataStore(username, sourceKey, []byte(username), []byte(username+"1"))
 	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
 	userUUID = bytesToUUID(filename)
 	return hmacKey, symKey, userUUID
