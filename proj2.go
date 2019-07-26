@@ -478,7 +478,7 @@ type sharingRecord struct {
 - Later, if Bob calls receiveFile, he will verify & decrypt magic_string, and use k6, k7 to calculate the sharedfileUUID
 */
 func (userdata *User) ShareFile(filename string, recipient string) (magic_string string, err error) {
-	recipientPk, ok := userlib.KeystoreGet(userdata.Username + "enc")
+	recipientPk, ok := userlib.KeystoreGet(recipient + "enc")
 	if !ok {
 		return "", errors.New("invalid recipient")
 	}
@@ -556,7 +556,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 		return err
 	}
 	keys, err := userlib.PKEDec(userdata.RsaSk, sharingEntry.CipherText)
-	userlib.DebugMsg("length: %v", len(keys))
+
 	sharedfileMacKey := keys[0:16]
 	sharedfileEncKey := keys[16:32]
 	userdata.SharedFiles[filename] = append(sharedfileMacKey, sharedfileEncKey...)
