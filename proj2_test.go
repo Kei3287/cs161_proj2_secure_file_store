@@ -239,10 +239,6 @@ func TestStore(t *testing.T) {
 
 	localDatastoreKeys := []userlib.UUID{aliceFilexUUID, aliceFileyUUID, aliceFilezUUID, bobFilexUUID, bobFileaUUID, alice0001UUID, bob0001UUID}
 
-	// These print statements show what is inside the two lists. Do TestLoad later to actually see if file values fetched are correct
-	//fmt.Println(localDatastoreKeys)
-	//fmt.Println(datastoreKeys)
-
 	if reflect.DeepEqual(localDatastoreKeys, datastoreKeys) {
 		t.Error("datastore keys not correct")
 		return
@@ -329,8 +325,6 @@ func TestAppendFile(t *testing.T) {
 	alice0003.StoreFile("file1", []byte("Hello. I am Alic"))
 	alice0003.AppendFile("file1", []byte("e."))
 	alicefile1, _ := alice0003.LoadFile("file1")
-
-	fmt.Println(alicefile1)
 
 	if !reflect.DeepEqual(alicefile1, []byte("Hello. I am Alice.")) {
 		t.Error("alicefile1 contents incorrect")
