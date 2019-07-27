@@ -8,6 +8,8 @@ import (
 	// You neet to add with
 	// go get github.com/nweaver/cs161-p2/userlib
 
+	"fmt"
+
 	"github.com/ryanleh/cs161-p2/userlib"
 
 	// Life is much easier with json:  You are
@@ -385,40 +387,15 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
-<<<<<<< HEAD
-	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
-
-	if !fileOk && !sharedfileOk {
-=======
 	if !fileOk {
 		fmt.Print(userdata.Username)
->>>>>>> 024b6d3a7b7fbec6c01ddadb6c79394fe1220424
 		return errors.New("Can't append, file requested not in datastore")
 	}
 
 	// depending on if the file we want to append to is shared or not, we use different keys
-<<<<<<< HEAD
-	var fileUUIDToUse userlib.UUID
-	var fileMarshalToUse []byte
-	var encKeytoUse []byte
-	var macKeytoUse []byte
-
-	if fileOk {
-		fileUUIDToUse = fileUUID
-		fileMarshalToUse = fileMarshal
-		encKeytoUse = fileEncKey
-		macKeytoUse = fileMacKey
-	} else if sharedfileOk {
-		fileUUIDToUse = sharedfileUUID
-		fileMarshalToUse = sharedfileMarshal
-		encKeytoUse = sharedfileEncKey
-		macKeytoUse = sharedfileMacKey
-	}
-=======
 	err = appendData(fileMacKey, fileEncKey, fileMarshal, data, fileUUID)
 	return err
 }
->>>>>>> 024b6d3a7b7fbec6c01ddadb6c79394fe1220424
 
 func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte, data []byte, fileUUID uuid.UUID) error {
 	var filedata FileEntry
@@ -445,12 +422,7 @@ func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte,
 	filedata.Sigma, _ = userlib.HMACEval(macKeytoUse, []byte(ciphertextMarshal)) // update sigma on the filedata
 
 	encryptedDataMarshal, _ := json.Marshal(filedata)
-<<<<<<< HEAD
-	userlib.DatastoreSet(fileUUIDToUse, encryptedDataMarshal)
-
-=======
 	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
->>>>>>> 024b6d3a7b7fbec6c01ddadb6c79394fe1220424
 	return nil
 }
 
