@@ -419,46 +419,34 @@ func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte,
 */
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
-	sourceKey := userdata.SourceKey
-	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
-	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 
-	// sharedFile keys should be taken from userdata struct if exists
 	if _, ok := userdata.SharedFiles[filename]; ok {
 		sharedfileMacKey = userdata.SharedFiles[filename][0:16]
 		sharedfileEncKey = userdata.SharedFiles[filename][16:32]
+		// creating the sharedfileUUID to see if it exists in the datastore already
+		encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
+		sharedfileUUID := bytesToUUID(encryptedSharedFilename)
+		sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
+		if sharedfileOk {
+			decryptedFileData, err := loadData(sharedfileMacKey, sharedfileEncKey, sharedfileMarshal)
+			return decryptedFileData, err
+		}
 	}
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
-
-	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
-	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
-
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
-	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
-
-	if !fileOk && !sharedfileOk {
+	if !fileOk {
 		return nil, errors.New("Your requested file isn't in the DataStore")
 	}
 
-	// depending on if the file we load is shared or not, we use different keys
-	var fileMarshalToUse []byte
-	var encKeytoUse []byte
-	var macKeytoUse []byte
+	decryptedFileData, err := loadData(fileMacKey, fileEncKey, fileMarshal)
+	return decryptedFileData, err
+}
 
-	if fileOk {
-		fileMarshalToUse = fileMarshal
-		encKeytoUse = fileEncKey
-		macKeytoUse = fileMacKey
-	} else if sharedfileOk {
-		fileMarshalToUse = sharedfileMarshal
-		encKeytoUse = sharedfileEncKey
-		macKeytoUse = sharedfileMacKey
-	}
-
+func loadData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte) (data []byte, err error) {
 	var filedata FileEntry
 	json.Unmarshal(fileMarshalToUse, &filedata)
 
@@ -476,7 +464,6 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		decryptedFileData = append(decryptedFileData, decryptedSlice...)
 		decryptedFileData = unpadString(decryptedFileData)
 	}
-
 	return decryptedFileData, nil
 }
 
