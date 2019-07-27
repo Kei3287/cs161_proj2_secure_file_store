@@ -8,6 +8,8 @@ import (
 	// You neet to add with
 	// go get github.com/nweaver/cs161-p2/userlib
 
+	"fmt"
+
 	"github.com/ryanleh/cs161-p2/userlib"
 
 	// Life is much easier with json:  You are
@@ -368,7 +370,13 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
 	sourceKey := userdata.SourceKey
 	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
-	sharedfileMacKey, _ := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+
+	// sharedFile keys should be taken from userdata struct if exists
+	if _, ok := userdata.SharedFiles[filename]; ok {
+		sharedfileMacKey = userdata.SharedFiles[filename][0:16]
+		sharedfileEncKey = userdata.SharedFiles[filename][16:32]
+	}
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
@@ -382,6 +390,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
 
 	if !fileOk && !sharedfileOk {
+		fmt.Print(userdata.Username)
 		return errors.New("Can't append, file requested not in datastore")
 	}
 
@@ -396,7 +405,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		macKeytoUse = fileMacKey
 	} else if sharedfileOk {
 		fileMarshalToUse = sharedfileMarshal
-		//encKeytoUse = sharedfileEncKey
+		encKeytoUse = sharedfileEncKey
 		macKeytoUse = sharedfileMacKey
 	}
 
@@ -414,7 +423,6 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
 	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
 	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
-
 		return errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
 	}
 
@@ -426,7 +434,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	encryptedDataMarshal, _ := json.Marshal(filedata)
 	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
 
-	return
+	return nil
 	// make sure that the entry exists before appending
 }
 
