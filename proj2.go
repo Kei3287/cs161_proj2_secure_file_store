@@ -107,7 +107,6 @@ type FileEntry struct {
 	Sigma             []byte
 	SigmaSharedUsers  []byte
 	Iv                []byte
-	ListOfSharedUsers []uuid.UUID
 }
 
 // This creates a user.  It will only be called once for a user
@@ -343,14 +342,6 @@ func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename
 	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)
 	// marshalling so I can pass this into sigma
 	encryptedData.Sigma, _ = userlib.HMACEval(fileMacKey, []byte(ciphertextMarshal))
-	// sigma on the filedata
-	encryptedUsername, _ := userlib.HMACEval(fileMacKey, []byte(username))
-	userUUID := bytesToUUID(encryptedUsername)
-	encryptedData.ListOfSharedUsers = append(encryptedData.ListOfSharedUsers, userUUID)
-	// list of UUID of people who can access file. First entry is owner
-	sharedMarshal, _ := json.Marshal(encryptedData.ListOfSharedUsers)
-	encryptedData.SigmaSharedUsers, _ = userlib.HMACEval(fileMacKey, []byte(sharedMarshal))
-	// sigma on the list of shared users
 	encryptedDataMarshal, _ := json.Marshal(encryptedData)
 	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
 }
@@ -406,13 +397,6 @@ func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte,
 	signature, _ := userlib.HMACEval(macKeytoUse, cipherTextMarshal)
 	if !userlib.HMACEqual(signature, filedata.Sigma) {
 		return errors.New("file data corrupted") // should we remove these entries from the datastore if they are corrupted?
-	}
-
-	// checking integrity of ListOfSharedUsers
-	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
-	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
-	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
-		return errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
 	}
 
 	// encrypt data and append new encrypted data to the cyphertext list
@@ -487,13 +471,6 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	signature, _ := userlib.HMACEval(macKeytoUse, cipherTextMarshal)
 	if !userlib.HMACEqual(signature, filedata.Sigma) {
 		return nil, errors.New("file data corrupted") // TODO: should we remove these entries from the datastore if they are corrupted?
-	}
-
-	// checking integrity of ListOfSharedUsers
-	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
-	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
-	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
-		return nil, errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
 	}
 
 	// decrypts each element in the list, and creates a new concatenated filedata to return
