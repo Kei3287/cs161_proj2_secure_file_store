@@ -581,12 +581,18 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 		return
 	}
 
+	// Carol attempts to receive file1 from Alice. File1 was shared before Carol was initialized
+	carol0004.ReceiveFile("file1", "alice0004", magic_string_fail)
 	/*
-		// Carol attempts to receive file1 from Alice. File1 was shared before Carol was initialized
-		carol0004.ReceiveFile("file1", "alice0004", magic_string_fail)
 		if err == nil {
 			t.Error("You cannot receive a file that was not sent to you when you did not exist yet")
 		}*/
+
+	// Carol (shouldn't be able to do this) loads this file1
+	file_fail, err := carol0004.LoadFile("file1")
+	if reflect.DeepEqual(file_fail, []byte("I like pie")) {
+		t.Error("Breach. Carol read a file that she wasn't supposed to")
+	}
 
 	// Alice shares file1 to Bob
 	magic_stringAB, _ := alice0004.ShareFile("file1", "bob0004")
