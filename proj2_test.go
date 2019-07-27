@@ -4,7 +4,6 @@ import (
 	_ "encoding/hex"
 	_ "encoding/json"
 	_ "errors"
-	"fmt"
 	"reflect"
 	_ "strconv"
 	_ "strings"
@@ -526,11 +525,13 @@ func TestAppendShare(t *testing.T) {
 	}
 
 	alice0005.AppendFile("file1", []byte("aa"))
-	if !reflect.DeepEqual(file1, []byte("hiaa")) {
+	alicefile1, err := alice0005.LoadFile("file1")
+	if !reflect.DeepEqual(alicefile1, []byte("hiaa")) {
 		t.Error("file contents wrong when Alice append")
 	}
 
 	bob0005.AppendFile("file1", []byte("bb"))
+	file1, err = bob0005.LoadFile("file1")
 	if !reflect.DeepEqual(file1, []byte("hiaabb")) {
 		t.Error("file contents wrong when Bob append")
 	}
@@ -649,13 +650,10 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 
 	// Everyone does some appending
 	bob0004.AppendFile("file1", []byte(" Bob likes pie too."))
-	fmt.Println(file1)
 
 	alice0004.AppendFile("file1", []byte(" No you don't."))
-	fmt.Println(file1)
 
 	carol0004.AppendFile("file1", []byte(" Stop bickering."))
-	fmt.Println(file1)
 
 	carol0004.AppendFile("file2", []byte(" Russia is cool."))
 

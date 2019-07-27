@@ -8,8 +8,6 @@ import (
 	// You neet to add with
 	// go get github.com/nweaver/cs161-p2/userlib
 
-	"fmt"
-
 	"github.com/ryanleh/cs161-p2/userlib"
 
 	// Life is much easier with json:  You are
@@ -390,20 +388,22 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
 
 	if !fileOk && !sharedfileOk {
-		fmt.Print(userdata.Username)
 		return errors.New("Can't append, file requested not in datastore")
 	}
 
 	// depending on if the file we want to append to is shared or not, we use different keys
+	var fileUUIDToUse userlib.UUID
 	var fileMarshalToUse []byte
 	var encKeytoUse []byte
 	var macKeytoUse []byte
 
 	if fileOk {
+		fileUUIDToUse = fileUUID
 		fileMarshalToUse = fileMarshal
 		encKeytoUse = fileEncKey
 		macKeytoUse = fileMacKey
 	} else if sharedfileOk {
+		fileUUIDToUse = sharedfileUUID
 		fileMarshalToUse = sharedfileMarshal
 		encKeytoUse = sharedfileEncKey
 		macKeytoUse = sharedfileMacKey
@@ -432,7 +432,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	filedata.Sigma, _ = userlib.HMACEval(macKeytoUse, []byte(ciphertextMarshal)) // update sigma on the filedata
 
 	encryptedDataMarshal, _ := json.Marshal(filedata)
-	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
+	userlib.DatastoreSet(fileUUIDToUse, encryptedDataMarshal)
 
 	return nil
 	// make sure that the entry exists before appending
