@@ -366,32 +366,38 @@ func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename
 */
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
-	sourceKey := userdata.SourceKey
-	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
-	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 
-	// sharedFile keys should be taken from userdata struct if exists
 	if _, ok := userdata.SharedFiles[filename]; ok {
 		sharedfileMacKey = userdata.SharedFiles[filename][0:16]
 		sharedfileEncKey = userdata.SharedFiles[filename][16:32]
+		// creating the sharedfileUUID to see if it exists in the datastore already
+		encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
+		sharedfileUUID := bytesToUUID(encryptedSharedFilename)
+		sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
+		if sharedfileOk {
+			err := appendData(sharedfileMacKey, sharedfileEncKey, sharedfileMarshal, data, sharedfileUUID)
+			return err
+		}
 	}
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
-
-	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
-	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
-
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
+<<<<<<< HEAD
 	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
 
 	if !fileOk && !sharedfileOk {
+=======
+	if !fileOk {
+		fmt.Print(userdata.Username)
+>>>>>>> 024b6d3a7b7fbec6c01ddadb6c79394fe1220424
 		return errors.New("Can't append, file requested not in datastore")
 	}
 
 	// depending on if the file we want to append to is shared or not, we use different keys
+<<<<<<< HEAD
 	var fileUUIDToUse userlib.UUID
 	var fileMarshalToUse []byte
 	var encKeytoUse []byte
@@ -408,7 +414,13 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		encKeytoUse = sharedfileEncKey
 		macKeytoUse = sharedfileMacKey
 	}
+=======
+	err = appendData(fileMacKey, fileEncKey, fileMarshal, data, fileUUID)
+	return err
+}
+>>>>>>> 024b6d3a7b7fbec6c01ddadb6c79394fe1220424
 
+func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte, data []byte, fileUUID uuid.UUID) error {
 	var filedata FileEntry
 	json.Unmarshal(fileMarshalToUse, &filedata)
 
@@ -427,15 +439,19 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	}
 
 	// encrypt data and append new encrypted data to the cyphertext list
-	filedata.CipherText = append(filedata.CipherText, userlib.SymEnc(encKeytoUse, filedata.Iv, padString(data)))
+	iv := userlib.RandomBytes(16)
+	filedata.CipherText = append(filedata.CipherText, userlib.SymEnc(encKeytoUse, iv, padString(data)))
 	ciphertextMarshal, _ := json.Marshal(filedata.CipherText)                    // marshalling so I can pass this into sigma
 	filedata.Sigma, _ = userlib.HMACEval(macKeytoUse, []byte(ciphertextMarshal)) // update sigma on the filedata
 
 	encryptedDataMarshal, _ := json.Marshal(filedata)
+<<<<<<< HEAD
 	userlib.DatastoreSet(fileUUIDToUse, encryptedDataMarshal)
 
+=======
+	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
+>>>>>>> 024b6d3a7b7fbec6c01ddadb6c79394fe1220424
 	return nil
-	// make sure that the entry exists before appending
 }
 
 // This loads a file from the Datastore.
