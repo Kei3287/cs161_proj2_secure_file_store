@@ -525,14 +525,48 @@ func TestAppendShare(t *testing.T) {
 		t.Error("file contents wrong when load")
 	}
 
-	alice0005.AppendFile("file1", []byte("aa"))
+	err = alice0005.AppendFile("file1", []byte("aa"))
+	if err != nil {
+		t.Error("appendfile error", err)
+		return
+	}
+	file1, err = alice0005.LoadFile("file1")
+	if err != nil {
+		t.Error("loadfile error", err)
+		return
+	}
 	if !reflect.DeepEqual(file1, []byte("hiaa")) {
-		t.Error("file contents wrong when Alice append")
+		t.Error("file contents wrong when Alice append 1")
+	}
+	file1, err = bob0005.LoadFile("file1")
+	if err != nil {
+		t.Error("loadfile error", err)
+		return
+	}
+	if !reflect.DeepEqual(file1, []byte("hiaa")) {
+		t.Error("file contents wrong when Alice append 2")
 	}
 
 	bob0005.AppendFile("file1", []byte("bb"))
+	if err != nil {
+		t.Error("appendfile error", err)
+		return
+	}
+	file1, err = alice0005.LoadFile("file1")
+	if err != nil {
+		t.Error("loadfile error", err)
+		return
+	}
 	if !reflect.DeepEqual(file1, []byte("hiaabb")) {
-		t.Error("file contents wrong when Bob append")
+		t.Error("file contents wrong when Bob append 1")
+	}
+	file1, err = bob0005.LoadFile("file1")
+	if err != nil {
+		t.Error("loadfile error", err)
+		return
+	}
+	if !reflect.DeepEqual(file1, []byte("hiaabb")) {
+		t.Error("file contents wrong when Bob append 2")
 	}
 }
 
