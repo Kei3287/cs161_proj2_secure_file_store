@@ -99,14 +99,12 @@ type User struct {
 type UserEntry struct {
 	CipherText []byte
 	Sigma      []byte
-	Iv         []byte
 }
 
 type FileEntry struct {
-	CipherText        [][]byte // each file entry is a list of encrypted files
-	Sigma             []byte
-	SigmaSharedUsers  []byte
-	Iv                []byte
+	CipherText       [][]byte // each file entry is a list of encrypted files
+	Sigma            []byte
+	SigmaSharedUsers []byte
 }
 
 // This creates a user.  It will only be called once for a user
@@ -184,7 +182,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	// encrypt and store userdata in the datastore
 	var encryptedData UserEntry
 	iv := userlib.RandomBytes(16)
-	encryptedData.Iv = iv
 	encryptedData.CipherText = userlib.SymEnc(userdataptr.SymKey, iv, padString(userdataMarshal)) // cipherText = iv || c
 	encryptedData.Sigma, _ = userlib.HMACEval(userdataptr.HmacKey, encryptedData.CipherText)
 
@@ -336,7 +333,6 @@ func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename
 	var encryptedData FileEntry
 	fileUUID := bytesToUUID(hashedFilename)
 	iv := userlib.RandomBytes(16)
-	encryptedData.Iv = iv
 	encryptedData.CipherText = append(encryptedData.CipherText, userlib.SymEnc(fileEncKey, iv, padString(data)))
 	// list of encrypted filedata
 	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)
