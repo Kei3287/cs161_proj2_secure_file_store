@@ -293,38 +293,25 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 - store datastore[fileUUID] = HMACEval(k4, SymEnc(k3, IV, fileData))
 */
 func (userdata *User) StoreFile(filename string, data []byte) {
-	sourceKey := userdata.SourceKey
-	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
-	sharedfileMacKey, _ := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 
 	// sharedFile keys should be taken from userdata struct if exists
 	if _, ok := userdata.SharedFiles[filename]; ok {
 		sharedfileMacKey = userdata.SharedFiles[filename][0:16]
-	}
-
-	// creating the fileUUID to see if it exists in the datastore already
-	hashedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
-	fileUUID := bytesToUUID(hashedFilename)
-
-	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
-	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
-
-	if _, ok := userlib.DatastoreGet(fileUUID); ok {
-		errors.New("file already exists. you are the only owner")
-		return
-	}
-
-	if _, ok := userlib.DatastoreGet(sharedfileUUID); ok {
-		errors.New("file already exists. you are not the only owner")
-		return
+		sharedfileEncKey = userdata.SharedFiles[filename][16:32]
+		hashedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
+		sharedfileUUID := bytesToUUID(hashedSharedFilename)
+		_, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
+		if sharedfileOk {
+			storeData(sharedfileEncKey, data, sharedfileMacKey, hashedSharedFilename, userdata.Username)
+			return
+		}
 	}
 
 	// filling in the FileEntry
+	hashedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	storeData(fileEncKey, data, fileMacKey, hashedFilename, userdata.Username)
 	userdata.ListOfOwnedFiles[filename] = true
-
-	return
 }
 
 func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename []byte, username string) {
