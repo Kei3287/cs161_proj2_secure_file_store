@@ -786,6 +786,8 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 }
 
 func TestComboAttack1(t *testing.T) {
+	// clearing our datastore to simplify debugging
+	userlib.DatastoreClear()
 	//userlib.SetDebugStatus(true)
 	// All users will use the same password for this test
 	alice0006, err := InitUser("alice0006", "password")
@@ -965,6 +967,127 @@ func TestComboAttack1(t *testing.T) {
 	if err == nil {
 		t.Error("Failed to detect tampering in file data")
 	}
+
+	// Everyone revokes the tampered file (should fail)
+	err = bob0006.RevokeFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	err = alice0006.RevokeFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	err = carol0006.RevokeFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+}
+
+func TestComboAttack2(t *testing.T) {
+	// clearing our datastore to simplify debugging
+	userlib.DatastoreClear()
+	userlib.SetDebugStatus(true)
+	// All users will use the same password for this test
+	alice0007, err := InitUser("alice0007", "password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user alice0007", err)
+		return
+	}
+
+	bob0007, err := InitUser("bob0007", "password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user bob0007", err)
+		return
+	}
+
+	alice0007.StoreFile("file1", []byte("Walking across the US in a straight line"))
+
+	// Alice shares file to Bob
+	magic_string, err := alice0007.ShareFile("file1", "bob0007")
+
+	// Datastore tampers with file1
+	alice0007SourceKey := userlib.Argon2Key([]byte("password"), []byte("alice0007"), 16)
+	sharedFileMacKey, _ := userlib.HMACEval(alice0007SourceKey, []byte("file1"+"alice0007"+"sharesig"))
+	file1Filename, _ := userlib.HMACEval(sharedFileMacKey[0:16], []byte("magic_string"))
+	var file1UUID userlib.UUID
+	// bytestouuid
+	for x := range file1UUID {
+		file1UUID[x] = file1Filename[x]
+	}
+
+	userlib.DatastoreSet(file1UUID, []byte("blabhaasdkfadfja;sdlkfja;sdlfka;sldfkasdfk"))
+
+	// Alice loads file (should error)
+	_, err = alice0007.LoadFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file1")
+	}
+
+	// Bob receives file that was shared to him before datastore tampered with it (should error)
+	err = bob0007.ReceiveFile("file1", "alice0007", magic_string)
+	_, err = bob0007.LoadFile("file1") // err only detected when load
+	if err == nil {
+		t.Error("Failed to detect tampering in file1")
+	}
+
+	// Bob shares tampered file
+	magic_string, err = bob0007.ShareFile("file1", "alice0007")
+	err = alice0007.ReceiveFile("file1", "bob0007", magic_string) // err only detected when receive
+	if err == nil {
+		t.Error("Failed to detect tampering in file1")
+	}
+
+	// Alice shares tampered file
+	magic_string, err = alice0007.ShareFile("file1", "bob0007") // err only detected when receive
+	err = bob0007.ReceiveFile("file1", "alice0007", magic_string)
+	if err == nil {
+		t.Error("Failed to detect tampering in file1")
+	}
+
+	// Bob and Alice both revoke tampered file
+	err = bob0007.RevokeFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file1")
+	}
+
+	err = alice0007.RevokeFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file1")
+	}
+
+	// Alice stores the same file again
+	alice0007.StoreFile("file1", []byte("Walking across the US in a straight line"))
+
+	// Alice loads this file
+	file1, err := alice0007.LoadFile("file1")
+	if err != nil || !reflect.DeepEqual(file1, []byte("Walking across the US in a straight line")) {
+		t.Error("Error in loading file")
+	}
+
+	// Alice appends to this file
+	err = alice0007.AppendFile("file1", []byte("."))
+	if err != nil {
+		t.Error("Error in appending file")
+	}
+
+	// Alice shares this file
+	magic_string, err = alice0007.ShareFile("file1", "bob0007")
+	if err != nil {
+		t.Error("Share file failed")
+	}
+
+	// Bob receives this file
+	err = bob0007.ReceiveFile("file1", "alice0007", magic_string)
+	if err != nil {
+		t.Error("Receive file failed")
+	}
+
+	// Bob creates his own file2
+	bob0007.StoreFile("file2", []byte("Alice can't even walk across the campus"))
 
 }
 
