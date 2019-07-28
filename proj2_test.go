@@ -53,6 +53,7 @@ func TestInitError(t *testing.T) {
 	t.Log("Got user", u)
 }
 
+/*
 func TestGetUser(t *testing.T) {
 	t.Log("getUser test")
 	userlib.SetDebugStatus(true)
@@ -70,13 +71,13 @@ func TestGetUser(t *testing.T) {
 	}
 	t.Log("Got user", u)
 
-	/*
+
 		_, _, userUUID := generateKeyAndUUID(username, password)
 		if u.Username != username || u.UserUUID != userUUID {
 			t.Error("data doesn't match")
 			return
-		}*/
-}
+		}
+}*/
 
 func TestGetUserError(t *testing.T) {
 	t.Log("getUserError test")
@@ -105,7 +106,8 @@ func TestGetUserError(t *testing.T) {
 
 func generateKeyAndUUID(username string, password string) (hmacKey []byte, symKey []byte, userUUID uuid.UUID) {
 	sourceKey := userlib.Argon2Key([]byte(password), []byte(username), 16)
-	hmacKey, symKey = generateKeysForDataStore(username, sourceKey, []byte(username), []byte(username+"1"))
+	hmacKey, _ = userlib.HMACEval(sourceKey, []byte(username))
+	symKey, _ = userlib.HMACEval(sourceKey, []byte(username+"1"))
 	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
 	userUUID = bytesToUUID(filename)
 	return hmacKey, symKey, userUUID
@@ -780,6 +782,7 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 }
 
 func TestComboAttack1(t *testing.T) {
+	//userlib.SetDebugStatus(true)
 	// All users will use the same password for this test
 	alice0006, err := InitUser("alice0006", "password")
 	if err != nil {
@@ -879,15 +882,14 @@ func TestComboAttack1(t *testing.T) {
 		t.Error("Result from Bob loading incorrect")
 	}
 
-	/*
-		entireDatastore := userlib.DatastoreGetMap()
-		datastoreKeys := make([]userlib.UUID, len(entireDatastore))
-		i := 0
-		for k := range entireDatastore {
-			datastoreKeys[i] = k
-			i++
-		}
-	*/
+	entireDatastore := userlib.DatastoreGetMap()
+	datastoreKeys := make([]userlib.UUID, len(entireDatastore))
+	i := 0
+	for k := range entireDatastore {
+		datastoreKeys[i] = k
+		i++
+	}
+	//userlib.DebugMsg("list: ", datastoreKeys)
 
 	// Datastore tampers with file1
 	sharedFileMacKey, _ := userlib.HMACEval(alice0006.SourceKey, []byte("file1"+"alice0006"+"sharesig"))
