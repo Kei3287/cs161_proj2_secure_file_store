@@ -99,15 +99,12 @@ type User struct {
 type UserEntry struct {
 	CipherText []byte
 	Sigma      []byte
-	Iv         []byte
 }
 
 type FileEntry struct {
-	CipherText        [][]byte // each file entry is a list of encrypted files
-	Sigma             []byte
-	SigmaSharedUsers  []byte
-	Iv                []byte
-	ListOfSharedUsers []uuid.UUID
+	CipherText       [][]byte // each file entry is a list of encrypted files
+	Sigma            []byte
+	SigmaSharedUsers []byte
 }
 
 // This creates a user.  It will only be called once for a user
@@ -185,7 +182,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	// encrypt and store userdata in the datastore
 	var encryptedData UserEntry
 	iv := userlib.RandomBytes(16)
-	encryptedData.Iv = iv
 	encryptedData.CipherText = userlib.SymEnc(userdataptr.SymKey, iv, padString(userdataMarshal)) // cipherText = iv || c
 	encryptedData.Sigma, _ = userlib.HMACEval(userdataptr.HmacKey, encryptedData.CipherText)
 
@@ -337,20 +333,11 @@ func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename
 	var encryptedData FileEntry
 	fileUUID := bytesToUUID(hashedFilename)
 	iv := userlib.RandomBytes(16)
-	encryptedData.Iv = iv
 	encryptedData.CipherText = append(encryptedData.CipherText, userlib.SymEnc(fileEncKey, iv, padString(data)))
 	// list of encrypted filedata
 	ciphertextMarshal, _ := json.Marshal(encryptedData.CipherText)
 	// marshalling so I can pass this into sigma
 	encryptedData.Sigma, _ = userlib.HMACEval(fileMacKey, []byte(ciphertextMarshal))
-	// sigma on the filedata
-	encryptedUsername, _ := userlib.HMACEval(fileMacKey, []byte(username))
-	userUUID := bytesToUUID(encryptedUsername)
-	encryptedData.ListOfSharedUsers = append(encryptedData.ListOfSharedUsers, userUUID)
-	// list of UUID of people who can access file. First entry is owner
-	sharedMarshal, _ := json.Marshal(encryptedData.ListOfSharedUsers)
-	encryptedData.SigmaSharedUsers, _ = userlib.HMACEval(fileMacKey, []byte(sharedMarshal))
-	// sigma on the list of shared users
 	encryptedDataMarshal, _ := json.Marshal(encryptedData)
 	userlib.DatastoreSet(fileUUID, encryptedDataMarshal)
 }
@@ -408,13 +395,6 @@ func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte,
 		return errors.New("file data corrupted") // should we remove these entries from the datastore if they are corrupted?
 	}
 
-	// checking integrity of ListOfSharedUsers
-	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
-	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
-	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
-		return errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
-	}
-
 	// encrypt data and append new encrypted data to the cyphertext list
 	iv := userlib.RandomBytes(16)
 	filedata.CipherText = append(filedata.CipherText, userlib.SymEnc(encKeytoUse, iv, padString(data)))
@@ -439,46 +419,34 @@ func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte,
 */
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
-	sourceKey := userdata.SourceKey
-	fileMacKey, fileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sig"), []byte(filename+userdata.Username+"enc"))
-	sharedfileMacKey, sharedfileEncKey := generateKeysForDataStore(userdata.Username, sourceKey, []byte(filename+userdata.Username+"sharesig"), []byte(filename+userdata.Username+"shareenc"))
+	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 
-	// sharedFile keys should be taken from userdata struct if exists
 	if _, ok := userdata.SharedFiles[filename]; ok {
 		sharedfileMacKey = userdata.SharedFiles[filename][0:16]
 		sharedfileEncKey = userdata.SharedFiles[filename][16:32]
+		// creating the sharedfileUUID to see if it exists in the datastore already
+		encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
+		sharedfileUUID := bytesToUUID(encryptedSharedFilename)
+		sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
+		if sharedfileOk {
+			decryptedFileData, err := loadData(sharedfileMacKey, sharedfileEncKey, sharedfileMarshal)
+			return decryptedFileData, err
+		}
 	}
 
 	// creating the fileUUID to see if it exists in the datastore already
 	encryptedFilename, _ := userlib.HMACEval(fileMacKey, []byte(filename))
 	fileUUID := bytesToUUID(encryptedFilename)
-
-	// creating the sharedfileUUID to see if it exists in the datastore already
-	encryptedSharedFilename, _ := userlib.HMACEval(sharedfileMacKey, []byte("magic_string"))
-	sharedfileUUID := bytesToUUID(encryptedSharedFilename)
-
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
-	sharedfileMarshal, sharedfileOk := userlib.DatastoreGet(sharedfileUUID)
-
-	if !fileOk && !sharedfileOk {
+	if !fileOk {
 		return nil, errors.New("Your requested file isn't in the DataStore")
 	}
 
-	// depending on if the file we load is shared or not, we use different keys
-	var fileMarshalToUse []byte
-	var encKeytoUse []byte
-	var macKeytoUse []byte
+	decryptedFileData, err := loadData(fileMacKey, fileEncKey, fileMarshal)
+	return decryptedFileData, err
+}
 
-	if fileOk {
-		fileMarshalToUse = fileMarshal
-		encKeytoUse = fileEncKey
-		macKeytoUse = fileMacKey
-	} else if sharedfileOk {
-		fileMarshalToUse = sharedfileMarshal
-		encKeytoUse = sharedfileEncKey
-		macKeytoUse = sharedfileMacKey
-	}
-
+func loadData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte) (data []byte, err error) {
 	var filedata FileEntry
 	json.Unmarshal(fileMarshalToUse, &filedata)
 
@@ -489,13 +457,6 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		return nil, errors.New("file data corrupted") // TODO: should we remove these entries from the datastore if they are corrupted?
 	}
 
-	// checking integrity of ListOfSharedUsers
-	listSharedUsersMarshal, _ := json.Marshal(filedata.ListOfSharedUsers)
-	signatureSharedUsers, _ := userlib.HMACEval(macKeytoUse, listSharedUsersMarshal)
-	if !userlib.HMACEqual(signatureSharedUsers, filedata.SigmaSharedUsers) {
-		return nil, errors.New("list of shared users corrupted") // should we remove these entries from the datastore if they are corrupted?
-	}
-
 	// decrypts each element in the list, and creates a new concatenated filedata to return
 	var decryptedFileData []byte
 	for _, slice := range filedata.CipherText {
@@ -503,7 +464,6 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		decryptedFileData = append(decryptedFileData, decryptedSlice...)
 		decryptedFileData = unpadString(decryptedFileData)
 	}
-
 	return decryptedFileData, nil
 }
 
