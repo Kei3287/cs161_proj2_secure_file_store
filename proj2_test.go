@@ -19,7 +19,7 @@ func TestInit(t *testing.T) {
 	t.Log("Initialization test")
 
 	// You may want to turn it off someday
-	userlib.SetDebugStatus(true)
+	//userlib.SetDebugStatus(true)
 	// someUsefulThings()  //  Don't call someUsefulThings() in the autograder in case a student removes it
 	// userlib.SetDebugStatus(false)
 	u, err := InitUser("alice", "fubar")
@@ -37,7 +37,7 @@ func TestInit(t *testing.T) {
 
 func TestInitError(t *testing.T) {
 	t.Log("Initialization test")
-	userlib.SetDebugStatus(true)
+	//userlib.SetDebugStatus(true)
 	u, err := InitUser("alice2", "p")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
@@ -81,7 +81,7 @@ func TestGetUser(t *testing.T) {
 
 func TestGetUserError(t *testing.T) {
 	t.Log("getUserError test")
-	userlib.SetDebugStatus(true)
+	//userlib.SetDebugStatus(true)
 	username := "alice4"
 	password := "pass"
 	u, err := InitUser(username, password)
@@ -109,13 +109,17 @@ func generateKeyAndUUID(username string, password string) (hmacKey []byte, symKe
 	hmacKey, _ = userlib.HMACEval(sourceKey, []byte(username))
 	symKey, _ = userlib.HMACEval(sourceKey, []byte(username+"1"))
 	filename, _ := userlib.HMACEval(hmacKey[0:16], []byte(username))
-	userUUID = bytesToUUID(filename)
+
+	// bytestouuid
+	for x := range userUUID {
+		userUUID[x] = filename[x]
+	}
 	return hmacKey, symKey, userUUID
 }
 
 func TestGetUserAttack(t *testing.T) {
 	t.Log("getUserAttack test")
-	userlib.SetDebugStatus(true)
+	//userlib.SetDebugStatus(true)
 	username5 := "alice5"
 	username6 := "alice6"
 	username7 := "alice7"
@@ -892,9 +896,14 @@ func TestComboAttack1(t *testing.T) {
 	//userlib.DebugMsg("list: ", datastoreKeys)
 
 	// Datastore tampers with file1
-	sharedFileMacKey, _ := userlib.HMACEval(alice0006.SourceKey, []byte("file1"+"alice0006"+"sharesig"))
+	alice0006SourceKey := userlib.Argon2Key([]byte("password"), []byte("alice0006"), 16)
+	sharedFileMacKey, _ := userlib.HMACEval(alice0006SourceKey, []byte("file1"+"alice0006"+"sharesig"))
 	file1Filename, _ := userlib.HMACEval(sharedFileMacKey[0:16], []byte("magic_string"))
-	file1UUID := bytesToUUID(file1Filename)
+	var file1UUID userlib.UUID
+	// bytestouuid
+	for x := range file1UUID {
+		file1UUID[x] = file1Filename[x]
+	}
 
 	userlib.DatastoreSet(file1UUID, []byte("blabhaasdkfadfja;sdlkfja;sdlfka;sldfkasdfk"))
 
