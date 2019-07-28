@@ -646,6 +646,17 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 	// Bob shares file1 to Carol
 	magic_stringBC, _ := bob0004.ShareFile("file1", "carol0004")
 
+	// Bob stores file1 (file1 already exists!) Bob's update should not change anything. (Implementation is actually undefined in the spec)
+	bob0004.StoreFile("file1", []byte("yo"))
+	file_fail, err = alice0004.LoadFile("file1")
+	if !reflect.DeepEqual(file_fail, []byte("I like pie")) {
+		t.Error("file1 contents incorrect when carol0004 loaded")
+	}
+	file_fail, err = bob0004.LoadFile("file1")
+	if !reflect.DeepEqual(file_fail, []byte("I like pie")) {
+		t.Error("file1 contents incorrect when carol0004 loaded")
+	}
+
 	// Carol loads file before calling receive
 	_, err = carol0004.LoadFile("file1")
 	if err == nil {
