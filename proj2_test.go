@@ -267,7 +267,6 @@ func TestLoadFile(t *testing.T) {
 	alice0002.StoreFile("file2", []byte("Bob, I think the government is onto me."))
 
 	alicefile1, _ := alice0002.LoadFile("file1")
-	userlib.DebugMsg("alicefile1: %v", string(alicefile1))
 	if !reflect.DeepEqual(alicefile1, []byte("pizza does not belong on pepperoni")) {
 		t.Error("alicefile1 contents incorrect")
 		return
@@ -646,6 +645,12 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 	// Bob shares file1 to Carol
 	magic_stringBC, _ := bob0004.ShareFile("file1", "carol0004")
 
+	// Bob receives file1 again, now under the name "fileBob"
+	err = bob0004.ReceiveFile("fileBob", "alice0004", magic_stringAB)
+	if err != nil {
+		t.Error("Bob should be able to accept receiveFile twice on the same file with different chosen filename")
+	}
+
 	// Bob stores file1 (file1 already exists!) Bob's update should not change anything. (Implementation is actually undefined in the spec)
 	bob0004.StoreFile("file1", []byte("yo"))
 	file_fail, err = alice0004.LoadFile("file1")
@@ -771,6 +776,183 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 	err = carol0004.ReceiveFile("file1", "bob0004", magic_stringBC)
 	if err == nil {
 		t.Error("Cannot receive file revoked from you")
+	}
+}
+
+func TestComboAttack1(t *testing.T) {
+	// All users will use the same password for this test
+	alice0006, err := InitUser("alice0006", "password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user alice0006", err)
+		return
+	}
+
+	bob0006, err := InitUser("bob0006", "password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user bob0006", err)
+		return
+	}
+
+	carol0006, err := InitUser("carol0006", "password")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user carol0006", err)
+		return
+	}
+
+	alice0006.StoreFile("file1", []byte("Big Bear is Watching"))
+
+	// alice shares file to non-existing user
+	magic_string, err := alice0006.ShareFile("file1", "blob0006")
+	if err == nil {
+		t.Error("Failed to detect Alice shared filename to non-existing user")
+	}
+
+	// alice shares file correctly this time
+	magic_string, err = alice0006.ShareFile("file1", "bob0006")
+
+	// Bob receives file with incorrect magic_string
+	magic_string_wrong := magic_string + "1"
+	err = bob0006.ReceiveFile("file1", "alice0006", magic_string_wrong)
+	if err == nil {
+		t.Error("Failed to detect Bob received file with incorrect magic_string")
+	}
+
+	// Bob receives file with incorrect user, probably got a new Mac with the butterfly keyboard. Sad :(
+	err = bob0006.ReceiveFile("file1", "aliccce0006", magic_string)
+	if err == nil {
+		t.Error("Failed to detect Bob received file with non-existing user")
+	}
+
+	// Bob recieves file with his own version's name. Should succeed
+	err = bob0006.ReceiveFile("gile1", "alice0006", magic_string)
+	if err != nil {
+		t.Error("Error when bob receives file with different name")
+	}
+
+	// Bob receives same file with different chosen filename
+	err = bob0006.ReceiveFile("file1", "alice0006", magic_string)
+	if err != nil {
+		t.Error("Error when bob receives file with different name 2")
+	}
+
+	// Bob loads both versions and checks contents
+	file1, _ := bob0006.LoadFile("gile1")
+	if !reflect.DeepEqual(file1, []byte("Big Bear is Watching")) {
+		t.Error("Result from proper loading incorrect")
+	}
+
+	file1, _ = bob0006.LoadFile("file1")
+	if !reflect.DeepEqual(file1, []byte("Big Bear is Watching")) {
+		t.Error("Result from proper loading incorrect")
+	}
+
+	// Bob shares file to Carol
+	magic_string, err = bob0006.ShareFile("file1", "carol0006")
+	if err != nil {
+		t.Error("Error when Bob shared file to Carol")
+	}
+
+	// Alice appends to file
+	alice0006.AppendFile("file1", []byte(" You."))
+	file1, _ = alice0006.LoadFile("file1")
+	if !reflect.DeepEqual(file1, []byte("Big Bear is Watching You.")) {
+		t.Error("Result from proper appending incorrect")
+	}
+
+	// Carol receives file (After Bob shared it and Alice appended to it)
+	err = carol0006.ReceiveFile("file1", "bob0006", magic_string)
+	if err != nil {
+		t.Error("Carol receiving file caused error")
+	}
+
+	// Bob and Carol check file for correct contents
+	file1, _ = carol0006.LoadFile("file1")
+	if !reflect.DeepEqual(file1, []byte("Big Bear is Watching You.")) {
+		t.Error("Result from Carol loading incorrect")
+	}
+
+	file1, _ = bob0006.LoadFile("file1")
+	if !reflect.DeepEqual(file1, []byte("Big Bear is Watching You.")) {
+		t.Error("Result from Bob loading incorrect")
+	}
+
+	/*
+		entireDatastore := userlib.DatastoreGetMap()
+		datastoreKeys := make([]userlib.UUID, len(entireDatastore))
+		i := 0
+		for k := range entireDatastore {
+			datastoreKeys[i] = k
+			i++
+		}
+	*/
+
+	// Datastore tampers with file1
+	sharedFileMacKey, _ := userlib.HMACEval(alice0006.SourceKey, []byte("file1"+alice0006.Username+"sharesig"))
+	file1Filename, _ := userlib.HMACEval(sharedFileMacKey[0:16], []byte("magic_string"))
+	file1UUID := bytesToUUID(file1Filename)
+
+	userlib.DatastoreSet(file1UUID, []byte("blabhaasdkfadfja;sdlkfja;sdlfka;sldfkasdfk"))
+
+	// Everyone loads the tampered file (should fail)
+	file1, err = alice0006.LoadFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	// Bob loads tampered file
+	file1, err = bob0006.LoadFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	// Bob loads the other (untampered) file "gile1" that was actually the same file shared to him from Alice
+	file1, err = bob0006.LoadFile("gile1")
+	if err == nil {
+		t.Error("Bob loading gile1 should still not work")
+	}
+
+	// Carol loads tampered file
+	file1, err = carol0006.LoadFile("file1")
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	// Everyone appends to the tampered file (should fail)
+	err = alice0006.AppendFile("file1", []byte("appending in vain"))
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	err = bob0006.AppendFile("file1", []byte("appending in vain"))
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	err = carol0006.AppendFile("file1", []byte("appending in vain"))
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	// Everyone shares the tampered file and calls receive (should fail)
+	magic_string, err = alice0006.ShareFile("file1", "bob0006")
+	err = bob0006.ReceiveFile("file1", "alice0006", magic_string)
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	magic_string, err = bob0006.ShareFile("file1", "alice0006")
+	err = alice0006.ReceiveFile("file1", "bob0006", magic_string)
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
+	}
+
+	magic_string, err = carol0006.ShareFile("file1", "bob0006")
+	err = bob0006.ReceiveFile("file1", "carol0006", magic_string)
+	if err == nil {
+		t.Error("Failed to detect tampering in file data")
 	}
 
 }

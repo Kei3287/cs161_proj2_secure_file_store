@@ -8,8 +8,6 @@ import (
 	// You neet to add with
 	// go get github.com/nweaver/cs161-p2/userlib
 
-	"fmt"
-
 	"github.com/ryanleh/cs161-p2/userlib"
 
 	// Life is much easier with json:  You are
@@ -375,7 +373,6 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	fileUUID := bytesToUUID(encryptedFilename)
 	fileMarshal, fileOk := userlib.DatastoreGet(fileUUID)
 	if !fileOk {
-		fmt.Print(userdata.Username)
 		return errors.New("Can't append, file requested not in datastore")
 	}
 
