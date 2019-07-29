@@ -293,6 +293,13 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 - store datastore[fileUUID] = HMACEval(k4, SymEnc(k3, IV, fileData))
 */
 func (userdata *User) StoreFile(filename string, data []byte) {
+	// no one can store file when they do not exist in the datastore & keystore
+	_, dataStoreOk := userlib.DatastoreGet(userdata.UserUUID)
+	_, keyStoreOk := userlib.KeystoreGet(userdata.Username + "enc")
+	if !dataStoreOk || !keyStoreOk {
+		return
+	}
+
 	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 
 	// sharedFile keys should be taken from userdata struct if exists
@@ -339,6 +346,13 @@ func storeData(fileEncKey []byte, data []byte, fileMacKey []byte, hashedFilename
 - Add the new encrypted data to the list of ciphertexts and recompute the HMAC signature
 */
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	// no one can append file when they do not exist in the datastore & keystore
+	_, dataStoreOk := userlib.DatastoreGet(userdata.UserUUID)
+	_, keyStoreOk := userlib.KeystoreGet(userdata.Username + "enc")
+	if !dataStoreOk || !keyStoreOk {
+		return errors.New("Cannot append when you don't exist")
+	}
+
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
 	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 
@@ -402,6 +416,13 @@ func appendData(macKeytoUse []byte, encKeytoUse []byte, fileMarshalToUse []byte,
 - decrypt
 */
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	// no one can load file when they do not exist in the datastore & keystore
+	_, dataStoreOk := userlib.DatastoreGet(userdata.UserUUID)
+	_, keyStoreOk := userlib.KeystoreGet(userdata.Username + "enc")
+	if !dataStoreOk || !keyStoreOk {
+		return nil, errors.New("Cannot load when you don't exist")
+	}
+
 	// generating all the necessary keys. If we store them in userdata later, we can just fetch them from userdata
 	fileEncKey, fileMacKey, sharedfileEncKey, sharedfileMacKey := generateFileKeysForDataStore(filename, userdata.Username, userdata.SourceKey)
 

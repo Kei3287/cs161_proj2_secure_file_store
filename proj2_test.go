@@ -287,7 +287,7 @@ func TestLoadFile(t *testing.T) {
 	alice0002.StoreFile("file1", []byte("I have updated file1"))
 
 	alicefile1, _ = alice0002.LoadFile("file1")
-	if !reflect.DeepEqual(alicefile1, []byte("pizza does not belong on pepperoni")) {
+	if !reflect.DeepEqual(alicefile1, []byte("I have updated file1")) {
 		t.Error("alicefile1 contents incorrect") // This implementation assumes calling StoreFile on an existing filename doesn't update it. Debatable
 		return
 	}
@@ -660,12 +660,12 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 	// Bob stores file1 (file1 already exists!) Bob's update should not change anything. (Implementation is actually undefined in the spec)
 	bob0004.StoreFile("file1", []byte("yo"))
 	file_fail, err = alice0004.LoadFile("file1")
-	if !reflect.DeepEqual(file_fail, []byte("I like pie")) {
-		t.Error("file1 contents incorrect when carol0004 loaded")
+	if !reflect.DeepEqual(file_fail, []byte("yo")) {
+		t.Error("file1 contents incorrect when alice0004 loaded")
 	}
 	file_fail, err = bob0004.LoadFile("file1")
-	if !reflect.DeepEqual(file_fail, []byte("I like pie")) {
-		t.Error("file1 contents incorrect when carol0004 loaded")
+	if !reflect.DeepEqual(file_fail, []byte("yo")) {
+		t.Error("file1 contents incorrect when bob0004 loaded")
 	}
 
 	// Carol loads file before calling receive
@@ -689,17 +689,17 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 
 	// Everyone loads their files and verifies content
 	file1, err := alice0004.LoadFile("file1")
-	if !reflect.DeepEqual(file1, []byte("I like pie")) {
+	if !reflect.DeepEqual(file1, []byte("yo")) {
 		t.Error("file1 contents incorrect when alice0004 loaded")
 	}
 
 	file1, err = bob0004.LoadFile("file1")
-	if !reflect.DeepEqual(file1, []byte("I like pie")) {
+	if !reflect.DeepEqual(file1, []byte("yo")) {
 		t.Error("file1 contents incorrect when bob0004 loaded")
 	}
 
 	file1, err = carol0004.LoadFile("file1")
-	if !reflect.DeepEqual(file1, []byte("I like pie")) {
+	if !reflect.DeepEqual(file1, []byte("yo")) {
 		t.Error("file1 contents incorrect when carol0004 loaded")
 	}
 
@@ -719,17 +719,17 @@ func TestCombineShareLoadRevoke(t *testing.T) {
 
 	// Everyone loads files again and checks content
 	file1, err = alice0004.LoadFile("file1")
-	if !reflect.DeepEqual(file1, []byte("I like pie Bob likes pie too. No you don't. Stop bickering.")) {
+	if !reflect.DeepEqual(file1, []byte("yo Bob likes pie too. No you don't. Stop bickering.")) {
 		t.Error("file1 contents incorrect when alice0004 appended")
 	}
 
 	file1, err = bob0004.LoadFile("file1")
-	if !reflect.DeepEqual(file1, []byte("I like pie Bob likes pie too. No you don't. Stop bickering.")) {
+	if !reflect.DeepEqual(file1, []byte("yo Bob likes pie too. No you don't. Stop bickering.")) {
 		t.Error("file1 contents incorrect when bob0004 appended")
 	}
 
 	file1, err = carol0004.LoadFile("file1")
-	if !reflect.DeepEqual(file1, []byte("I like pie Bob likes pie too. No you don't. Stop bickering.")) {
+	if !reflect.DeepEqual(file1, []byte("yo Bob likes pie too. No you don't. Stop bickering.")) {
 		t.Error("file1 contents incorrect when carol0004 appended")
 	}
 
@@ -1059,36 +1059,100 @@ func TestComboAttack2(t *testing.T) {
 		t.Error("Failed to detect tampering in file1")
 	}
 
-	// Alice stores the same file again
-	alice0007.StoreFile("file1", []byte("Walking across the US in a straight line"))
+	// Alice stores another file
+	alice0007.StoreFile("file2", []byte("Walking across the US in a straight line"))
 
 	// Alice loads this file
-	file1, err := alice0007.LoadFile("file1")
-	if err != nil || !reflect.DeepEqual(file1, []byte("Walking across the US in a straight line")) {
+	file2, err := alice0007.LoadFile("file2")
+	if err != nil || !reflect.DeepEqual(file2, []byte("Walking across the US in a straight line")) {
 		t.Error("Error in loading file")
 	}
 
 	// Alice appends to this file
-	err = alice0007.AppendFile("file1", []byte("."))
+	err = alice0007.AppendFile("file2", []byte("."))
 	if err != nil {
 		t.Error("Error in appending file")
 	}
 
 	// Alice shares this file
-	magic_string, err = alice0007.ShareFile("file1", "bob0007")
+	magic_string, err = alice0007.ShareFile("file2", "bob0007")
 	if err != nil {
 		t.Error("Share file failed")
 	}
 
 	// Bob receives this file
-	err = bob0007.ReceiveFile("file1", "alice0007", magic_string)
+	err = bob0007.ReceiveFile("file2", "alice0007", magic_string)
 	if err != nil {
 		t.Error("Receive file failed")
 	}
 
-	// Bob creates his own file2
-	bob0007.StoreFile("file2", []byte("Alice can't even walk across the campus"))
+	// Bob creates his own file2  (already undefined behavior again)
+	bob0007.StoreFile("file2", []byte("Bob's World"))
 
+	// Get Alice's file2 UUID
+	sharedFileMacKey, _ = userlib.HMACEval(alice0007SourceKey, []byte("file2"+"alice0007"+"sharesig"))
+	file2Filename, _ := userlib.HMACEval(sharedFileMacKey[0:16], []byte("magic_string"))
+	var file2UUIDAlice userlib.UUID
+	// bytestouuid
+	for x := range file1UUID {
+		file2UUIDAlice[x] = file2Filename[x]
+	}
+
+	// Get Bob's file2 UUID
+	bob0007SourceKey := userlib.Argon2Key([]byte("password"), []byte("bob0007"), 16)
+	sharedFileMacKey, _ = userlib.HMACEval(bob0007SourceKey, []byte("file3"+"bob0007"+"sharesig"))
+	file2Filename, _ = userlib.HMACEval(sharedFileMacKey[0:16], []byte("magic_string"))
+	var file2UUIDBob userlib.UUID
+	// bytestouuid
+	for x := range file1UUID {
+		file2UUIDBob[x] = file2Filename[x]
+	}
+
+	// Datastore tampers: Sets file2UUIDAlice contents = file2UUIDBob contents
+	file2UUIDBobContents, _ := userlib.DatastoreGet(file2UUIDBob)
+	userlib.DatastoreSet(file2UUIDAlice, file2UUIDBobContents)
+
+	// Alice loads/appends (should error)
+	file2, err = alice0007.LoadFile("file2")
+	if err == nil {
+		t.Error("Failed to detect datastore tampering")
+	}
+
+	err = alice0007.AppendFile("file2", []byte("yo wussup"))
+	if err == nil {
+		t.Error("Failed to detect datastore tampering")
+	}
+
+	// Bob loads a file of the same name (should fail, also a bit undefined in nature)
+	file2, err = bob0007.LoadFile("file2")
+	if err == nil {
+		t.Error("Failed to detect datastore tampering")
+	}
+
+	// Datastore clears everything
+	userlib.DatastoreClear()
+
+	// Alice and Bob try to do things in vain
+	alice0007.StoreFile("filesarefun", []byte("what is this...."))
+	_, err = alice0007.LoadFile("filesarefun")
+	if err == nil {
+		t.Error("The Datastore is empty goddammit")
+	}
+
+	magic_string, err = alice0007.ShareFile("filesarefun", "bob0007")
+	if err == nil {
+		t.Error("The Datastore is empty goddammit")
+	}
+
+	err = bob0007.ReceiveFile("filesarefun", "alice0007", magic_string)
+	if err == nil {
+		t.Error("The Datastore is empty goddammit")
+	}
+
+	err = alice0007.RevokeFile("filesarefun")
+	if err == nil {
+		t.Error("The Datastore is empty goddammit")
+	}
 }
 
 // err = nil -> success; err != nil -> fail
