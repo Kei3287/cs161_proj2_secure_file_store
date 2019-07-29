@@ -514,6 +514,13 @@ type sharingRecord struct {
 - Later, if Bob calls receiveFile, he will verify & decrypt magic_string, and use k6, k7 to calculate the sharedfileUUID
 */
 func (userdata *User) ShareFile(filename string, recipient string) (magic_string string, err error) {
+	// no one can share file when they do not exist in the datastore & keystore
+	_, dataStoreOk := userlib.DatastoreGet(userdata.UserUUID)
+	_, keyStoreOk := userlib.KeystoreGet(userdata.Username + "enc")
+	if !dataStoreOk || !keyStoreOk {
+		return "", errors.New("Cannot share when you don't exist")
+	}
+
 	recipientPk, ok := userlib.KeystoreGet(recipient + "enc")
 	if !ok {
 		return "", errors.New("invalid recipient")
@@ -577,6 +584,13 @@ func deleteDataEntry(sourceKey []byte, username string, filename string, hmacSal
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string, magic_string string) error {
+	// no one can receive file when they do not exist in the datastore & keystore
+	_, dataStoreOk := userlib.DatastoreGet(userdata.UserUUID)
+	_, keyStoreOk := userlib.KeystoreGet(userdata.Username + "enc")
+	if !dataStoreOk || !keyStoreOk {
+		return errors.New("Cannot receive when you don't exist")
+	}
+
 	if _, ok := userdata.SharedFiles[filename]; ok {
 		return errors.New("File already shared with someone")
 	}
@@ -601,6 +615,13 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
+	// no one can revoke file when they do not exist in the datastore & keystore
+	_, dataStoreOk := userlib.DatastoreGet(userdata.UserUUID)
+	_, keyStoreOk := userlib.KeystoreGet(userdata.Username + "enc")
+	if !dataStoreOk || !keyStoreOk {
+		return errors.New("Cannot revoke when you don't exist")
+	}
+
 	_, ok := userdata.ListOfOwnedFiles[filename]
 	if !ok {
 		return errors.New("You have to be the owner of the file to revoke")

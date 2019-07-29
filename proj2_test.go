@@ -1129,12 +1129,24 @@ func TestComboAttack2(t *testing.T) {
 		t.Error("Failed to detect datastore tampering")
 	}
 
+	magic_string, err = bob0007.ShareFile("file2", "alice0007")
+	err = alice0007.ReceiveFile("file2", "bob0007", magic_string)
+	if err == nil {
+		t.Error("Failed to detect datastore tampering")
+	}
+
 	// Datastore clears everything
 	userlib.DatastoreClear()
 
 	// Alice and Bob try to do things in vain
+
 	alice0007.StoreFile("filesarefun", []byte("what is this...."))
 	_, err = alice0007.LoadFile("filesarefun")
+	if err == nil {
+		t.Error("The Datastore is empty goddammit")
+	}
+
+	err = alice0007.AppendFile("filesarefun", []byte("a"))
 	if err == nil {
 		t.Error("The Datastore is empty goddammit")
 	}
